@@ -1,6 +1,6 @@
 use std::{fs, time};
 use std::string::String;
-use curv::arithmetic::Converter;
+use curv::arithmetic::{Converter, Zero};
 use curv::BigInt;
 use curv::cryptographic_primitives::proofs::sigma_dlog::DLogProof;
 use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
@@ -87,17 +87,22 @@ pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) {
 
     let mut j = 0;
     let mut point_vec: Vec<GE> = Vec::new();
+    let mut chain_code_vec: Vec<[u8;32]> = Vec::new();
     let mut blind_vec: Vec<BigInt> = Vec::new();
     let mut enc_keys: Vec<Vec<u8>> = Vec::new();
     for i in 1..=PARTIES {
         if i == party_num_int {
-            point_vec.push(decom_i.clone().y_i);
-            blind_vec.push(decom_i.clone().blind_factor);
+            let decom_i_clone = decom_i.clone();
+            point_vec.push(decom_i_clone.y_i);
+            blind_vec.push(decom_i_clone.blind_factor);
+            chain_code_vec.push(decom_i_clone.chain_code);
         } else {
             let decom_j: KeyGenDecommitMessage1 = serde_json::from_str::<KeyGenDecommitMessage1>(&round2_ans_vec[j]).unwrap();
-            point_vec.push(decom_j.clone().y_i);
-            blind_vec.push(decom_j.clone().blind_factor);
-            let key_bn: BigInt = (decom_j.y_i * party_keys.keypair.expended_private_key.private_key.clone()).x_coord().unwrap();
+            let decom_j_clone = decom_j.clone();
+            point_vec.push(decom_j.y_i);
+            blind_vec.push(decom_j.blind_factor);
+            chain_code_vec.push(decom_j.chain_code);
+            let key_bn: BigInt = (decom_j_clone.y_i * party_keys.keypair.expended_private_key.private_key.clone()).x_coord().unwrap();
             let key_bytes = BigInt::to_bytes(&key_bn);
             let mut template: Vec<u8> = vec![0u8; AES_KEY_BYTES_LEN - key_bytes.len()];
             template.extend_from_slice(&key_bytes[..]);
@@ -108,6 +113,7 @@ pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) {
 
     let (head, tail) = point_vec.split_at(1);
     let y_sum = tail.iter().fold(head[0].clone(), |acc, x| acc + x);
+    let chain_code_sum = chain_code_vec.iter().fold(FE::zero(), |acc, x| acc + FE::from_bytes(x).unwrap());
 
     let key_gen_parties_points_vec = (0..PARTIES)
         .map(|i| i + 1)
@@ -248,8 +254,9 @@ pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) {
         party_num_int,
         vss_scheme_vec,
         y_sum,
+        chain_code_sum.to_bytes().to_vec()
     ))
-        .unwrap();
+    .unwrap();
 
     fs::write(keys_file_path, keygen_json).expect("Unable to save !");
 }

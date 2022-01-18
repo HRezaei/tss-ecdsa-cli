@@ -10,8 +10,9 @@ use multi_party_eddsa::protocols::thresholdsig::{
     EphemeralKey, EphemeralSharedKeys, KeyGenBroadcastMessage1, Keys, LocalSig, Parameters,
     SharedKeys
 };
+use sha2::{Digest, Sha512};
 use crate::common::{AEAD, aes_decrypt, aes_encrypt, AES_KEY_BYTES_LEN, broadcast, Client, hd_keys, Params, PartySignup, poll_for_broadcasts, poll_for_p2p, sendp2p, signup};
-use crate::eddsa::{CURVE_NAME};
+use crate::eddsa::{CURVE_NAME, derive_hd_key};
 
 type GE = Point<Ed25519>;
 type FE = Scalar<Ed25519>;
@@ -32,25 +33,22 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
 
     let data = fs::read_to_string(key_file_path)
         .expect("Unable to load keys, did you run keygen first? ");
-    let (mut party_keys, mut shared_keys, _, mut vss_scheme_vec, Y): (
+    let (mut party_keys, mut shared_keys, _, mut vss_scheme_vec, Y, chain_code): (
         Keys,
         SharedKeys,
         u16,
         Vec<VerifiableSS<Ed25519>>,
         GE,
+        [u8;32]
     ) = serde_json::from_str(&data).unwrap();
 
     let sign_at_path = !path.is_empty();
     // Get root pub key or HD pub key at specified path
-    let (Y, f_l_new) = match path.is_empty() {
-        true => (Y, FE::zero()),
+    let (Y, chain_code) = match path.is_empty() {
+        true => (Y, chain_code),
         false => {
-            let path_vector: Vec<BigInt> = path
-                .split('/')
-                .map(|s| BigInt::from_str_radix(s.trim(), 10).unwrap())
-                .collect();
-            let (y_sum_child, f_l_new) = hd_keys::get_hd_key(&Y, path_vector.clone());
-            (y_sum_child.clone(), f_l_new)
+            let (y_sum_child, chain_code_child) = derive_hd_key(Y, chain_code.clone(), path.to_string());
+            (y_sum_child.clone(), chain_code_child)
         }
     };
 
@@ -63,47 +61,21 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
     };
     println!("number: {:?}, uuid: {:?}, curve: {:?}", party_num_int, uuid, CURVE_NAME);
 
-    if sign_at_path == true {
-        // optimize!
-        let g: GE = Point::<Ed25519>::generator().to_point();
-        // apply on first commitment for leader (leader is party with num=1)
-        let com_zero_new = vss_scheme_vec[0].commitments[0].clone() + g * f_l_new.clone();
-        // println!("old zero: {:?}, new zero: {:?}", vss_scheme_vec[0].commitments[0], com_zero_new);
-        // get iterator of all commitments and skip first zero commitment
-        let mut com_iter_unchanged = vss_scheme_vec[0].commitments.iter();
-        com_iter_unchanged.next().unwrap();
-        // iterate commitments and inject changed commitments in the beginning then aggregate into vector
-        let com_vec_new = (0..vss_scheme_vec[1].commitments.len())
-            .map(|i| {
-                if i == 0 {
-                    com_zero_new.clone()
-                } else {
-                    com_iter_unchanged.next().unwrap().clone()
-                }
-            })
-            .collect::<Vec<GE>>();
-        let new_vss = VerifiableSS {
-            parameters: vss_scheme_vec[0].parameters.clone(),
-            commitments: com_vec_new,
-        };
-        // replace old vss_scheme for leader with new one at position 0
-        //    println!("comparing vectors: \n{:?} \nand \n{:?}", vss_scheme_vec[0], new_vss);
-
-        vss_scheme_vec.remove(0);
-        vss_scheme_vec.insert(0, new_vss);
-        //    println!("NEW VSS VECTOR: {:?}", vss_scheme_vec);
+    if sign_at_path {
+        party_keys.keypair = party_keys.keypair.derive_hd_child(path.to_string());
     }
 
-    if sign_at_path == true {
+    /*if sign_at_path == true {
         if party_num_int == 1 {
             // update u_i and x_i for leader
-            party_keys = update_party_key(party_keys.clone(), f_l_new.clone());
-            shared_keys = update_shared_key(shared_keys, f_l_new.clone());
+            //party_keys = update_party_key(party_keys.clone(), f_l_new.clone());
+
+            shared_keys = update_shared_key(shared_keys, party_keys.keypair.expended_private_key.chain_code.clone(), Y.clone(), path.to_string());
         } else {
             // only update x_i for non-leaders
-            shared_keys = update_shared_key(shared_keys, f_l_new.clone());
+            shared_keys = update_shared_key(shared_keys, party_keys.keypair.expended_private_key.chain_code.clone(), Y.clone(), path.to_string());
         }
-    }
+    }*/
 
     let (_eph_keys_vec, eph_shared_keys_vec, R, eph_vss_vec) = eph_keygen_t_n_parties(
         client.clone(),
@@ -148,12 +120,32 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
     let vss_sum_local_sigs = verify_local_sig.unwrap();
 
     // each party / dealer can generate the signature
-    let signature =
+    let mut signature =
         thresholdsig::generate(&vss_sum_local_sigs, &local_sig_vec, &parties_index_vec, R);
+
+    /*if sign_at_path {
+        //This is a tweak made by Elichai Turkel but not recommended by him:
+        update_signature(&mut signature, &Y, &message, FE::from_bytes(&chain_code).unwrap());
+    }*/
+
     let verify_sig = signature.verify(&message, &Y);
     assert!(verify_sig.is_ok());
 
     (signature, Y)
+}
+
+
+fn update_signature(signature: &mut Signature, public_key: &Point<Ed25519>, message: &[u8], f_l_new: Scalar<Ed25519>) {
+    let mut k = Sha512::new()
+        .chain(&*signature.R.to_bytes(true))
+        .chain(&*public_key.to_bytes(true))
+        .chain(message)
+        .finalize();
+    // reverse because BigInt uses BigEndian.
+    k.reverse();
+    // This will reduce it mod the group order.
+    let add_to_sigma = Scalar::from_bigint(&BigInt::from_bytes(&k));
+    signature.s = signature.s.clone() + f_l_new * add_to_sigma;
 }
 
 
@@ -169,7 +161,8 @@ pub fn update_party_key(
             public_key: party_keys.keypair.public_key,
             expended_private_key: ExpendedPrivateKey {
                 prefix: party_keys.keypair.expended_private_key.prefix,
-                private_key: new_private_key
+                private_key: new_private_key,
+                chain_code: party_keys.keypair.expended_private_key.chain_code
             }
         },
         party_index: party_keys.party_index
@@ -179,15 +172,23 @@ pub fn update_party_key(
 
 pub fn update_shared_key(
     shared_keys: SharedKeys,
-    factor_x_i: Scalar<Ed25519>,
+    chain_code: [u8;32],
+    updated_public_key: Point<Ed25519>,
+    path: String
 ) -> SharedKeys {
 
-    let new_x_i = shared_keys.x_i.add(factor_x_i);
+    let tmp_private_key = ExpendedPrivateKey{
+        prefix: shared_keys.prefix,
+        private_key: shared_keys.x_i,
+        chain_code
+    };
+
+    let child_private_key = tmp_private_key.derive_hd_child(path);
 
     SharedKeys {
-        y: shared_keys.y,
-        x_i: new_x_i,
-        prefix: shared_keys.prefix
+        y: updated_public_key,
+        x_i: child_private_key.private_key,
+        prefix: child_private_key.prefix
     }
 }
 

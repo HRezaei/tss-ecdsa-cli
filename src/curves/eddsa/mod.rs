@@ -3,6 +3,7 @@ use curv::arithmetic::Converter;
 use curv::BigInt;
 use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
 use curv::elliptic::curves::{Ed25519, Scalar};
+use ed25519_bip32::{DerivationScheme, XPub};
 use multi_party_eddsa::protocols::{FE, GE};
 use multi_party_eddsa::protocols::thresholdsig::{Keys, SharedKeys};
 use serde_json::{json, Value};
@@ -46,24 +47,21 @@ pub fn run_pubkey(keys_file_path:&str, path:&str) -> Value {
     let data = fs::read_to_string(keys_file_path).expect(
         format!("Unable to load keys file at location: {}", keys_file_path).as_str(),
     );
-    let (_party_keys, _shared_keys, _party_id, _vss_scheme_vec, y_sum): (
+    let (_party_keys, _shared_keys, _party_id, _vss_scheme_vec, y_sum, chain_code): (
         Keys,
         SharedKeys,
         u16,
         Vec<VerifiableSS<Ed25519>>,
         GE,
+        [u8;32]
     ) = serde_json::from_str(&data).unwrap();
 
     // Get root pub key or HD pub key at specified path
-    let (_f_l_new, y_sum): (FE, GE) = match path.is_empty() {
-        true => (Scalar::<Ed25519>::zero(), y_sum),
+    let (y_sum, chain_code): (GE, [u8;32]) = match path.is_empty() {
+        true => (y_sum, chain_code),
         false => {
-            let path_vector: Vec<BigInt> = path
-                .split('/')
-                .map(|s| BigInt::from_str_radix(s.trim(), 10).unwrap())
-                .collect();
-            let (y_sum_child, f_l_new) = hd_keys::get_hd_key(&y_sum, path_vector.clone());
-            (f_l_new, y_sum_child.clone())
+            let (y_sum_child, chain_code_child) = derive_hd_key(y_sum, chain_code, path.to_string());
+            (y_sum_child.clone(), chain_code_child)
         }
     };
 
@@ -74,4 +72,26 @@ pub fn run_pubkey(keys_file_path:&str, path:&str) -> Value {
                 "path": path,
             });
     ret_dict
+}
+
+
+pub fn derive_hd_key(public_key: GE, chain_code: [u8;32], path: String) -> (GE, [u8;32]) {
+    let mut public_key_bytes = [0u8;64];
+    public_key_bytes[0..32].copy_from_slice(public_key.to_bytes(true).as_ref());
+    public_key_bytes[32..64].copy_from_slice(chain_code.as_ref());
+
+    let pub_key_without_private = XPub::from_bytes(public_key_bytes);
+
+    let path_vector: Vec<u32> = path
+        .split('/')
+        .map(|s| s.parse::<u32>().unwrap())
+        .collect();
+    let mut child = pub_key_without_private;
+    for index in path_vector {
+        child = child.derive(DerivationScheme::V2, index).unwrap();
+    }
+
+    let child_public_key = GE::from_bytes(child.public_key_slice()).unwrap();
+    let child_chain_code = child.chain_code();
+    (child_public_key, child_chain_code)
 }

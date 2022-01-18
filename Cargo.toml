@@ -26,6 +26,7 @@ clap = { version = "2.33", features = ["yaml"] }
 hmac = "0.11"
 sha2 = "0.9"
 rand = "0.8"
+ed25519-bip32 = "0.4.0"
 
 [dependencies.paillier]
 version = "0.4.2"
@@ -39,7 +40,7 @@ branch = "master"
 
 [dependencies.multi-party-eddsa]
 git = "https://github.com/HRezaei/multi-party-eddsa"
-branch = "feature/curv-0.9-examples"
+branch = "feature/hd-support"
 
 [patch.crates-io]
 rust-gmp = { version = "0.5.1", features = ["serde_support"], git = "https://github.com/KZen-networks/rust-gmp" }
