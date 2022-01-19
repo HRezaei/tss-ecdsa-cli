@@ -50,7 +50,10 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
                 .map(|s| BigInt::from_str_radix(s.trim(), 10).unwrap())
                 .collect();
             let (y_sum_child, f_l_new) = hd_keys::get_hd_key(&Y, path_vector.clone());
-            (y_sum_child.clone(), f_l_new)
+
+            let safe_public_key_child = update_hd_derived_public_key(y_sum_child);
+
+            (safe_public_key_child, f_l_new)
         }
     };
 
@@ -137,6 +140,14 @@ fn update_signature(signature: &mut Signature, public_key: &Point<Ed25519>, mess
     signature.s = signature.s.clone() + f_l_new * add_to_sigma;
 }
 
+pub fn update_hd_derived_public_key(public_key: GE) -> GE {
+    let eight = Scalar::<Ed25519>::from(8);
+    let eight_inverse = eight.invert().unwrap();
+    //Based on a recommendation by Elichai Turkel and this comment:
+    // https://github.com/WebOfTrustInfo/rwot1-sf/issues/13#issuecomment-169858664,
+    // we decided to do this:
+    (public_key * eight_inverse) * eight
+}
 
 pub fn eph_keygen_t_n_parties(
     client: Client,
