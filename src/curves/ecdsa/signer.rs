@@ -63,27 +63,7 @@ pub fn sign(
     println!("{}", serde_json::to_string_pretty(&debug).unwrap());
 
     // round 0: collect signers IDs
-    assert!(client.broadcast(
-        "round0",
-        serde_json::to_string(&party_id).unwrap(),
-    )
-    .is_ok());
-
-    let round0_ans_vec = client.poll_for_broadcasts(
-        THRESHOLD + 1,
-        "round0",
-    );
-    let mut j = 0;
-    let mut signers_vec: Vec<u16> = Vec::new();
-    for i in 1..=THRESHOLD + 1 {
-        if i == party_num_int {
-            signers_vec.push(party_id - 1);
-        } else {
-            let signer_j: u16 = serde_json::from_str(&round0_ans_vec[j]).unwrap();
-            signers_vec.push(signer_j - 1);
-            j = j + 1;
-        }
-    }
+    let mut signers_vec: Vec<u16> = client.exchange_data(THRESHOLD+1, "round0", party_id - 1);
 
     if sign_at_path == true {
         // optimize!
@@ -138,31 +118,25 @@ pub fn sign(
     //////////////////////////////////////////////////////////////////////////////
     let (com, decommit) = sign_keys.phase1_broadcast();
     let (m_a_k, _) = MessageA::a(&sign_keys.k_i, &party_keys.ek, &[]);
-    assert!(client.broadcast(
-        "round1",
-        serde_json::to_string(&(com.clone(), m_a_k.clone())).unwrap(),
-    )
-    .is_ok());
-    let round1_ans_vec = client.poll_for_broadcasts(
+    let round1_ans_vector = client.exchange_data(
         THRESHOLD + 1,
         "round1",
+        (com.clone(), m_a_k.clone())
     );
 
     let mut j = 0;
-    let mut bc1_vec: Vec<SignBroadcastPhase1> = Vec::new();
+    let mut bc1_vec: Vec<SignBroadcastPhase1> = round1_ans_vector
+        .iter()
+        .map(|x1| x1.0.clone())
+        .collect();
+
     let mut m_a_vec: Vec<MessageA> = Vec::new();
 
     for i in 1..THRESHOLD + 2 {
-        if i == party_num_int {
-            bc1_vec.push(com.clone());
-        //   m_a_vec.push(m_a_k.clone());
-        } else {
+        if i != party_num_int {
             //     if signers_vec.contains(&(i as usize)) {
-            let (bc1_j, m_a_party_j): (SignBroadcastPhase1, MessageA) =
-                serde_json::from_str(&round1_ans_vec[j]).unwrap();
-            bc1_vec.push(bc1_j);
+            let (_bc1_j, m_a_party_j): (SignBroadcastPhase1, MessageA) = round1_ans_vector[(i-1) as usize].clone();
             m_a_vec.push(m_a_party_j);
-
             j = j + 1;
             //       }
         }
@@ -266,43 +240,18 @@ pub fn sign(
     let delta_i = sign_keys.phase2_delta_i(&alpha_vec, &beta_vec);
     let sigma = sign_keys.phase2_sigma_i(&miu_vec, &ni_vec);
 
-    assert!(client.broadcast(
-        "round3",
-        serde_json::to_string(&delta_i).unwrap(),
-    )
-    .is_ok());
-    let round3_ans_vec = client.poll_for_broadcasts(
-        THRESHOLD + 1,
-        "round3",
-    );
-    let mut delta_vec: Vec<FE> = Vec::new();
-    format_vec_from_reads(
-        &round3_ans_vec,
-        party_num_int as usize,
-        delta_i,
-        &mut delta_vec,
-    );
+    let mut delta_vec: Vec<FE> = client.exchange_data(THRESHOLD+1, "round3", delta_i);
+
     let delta_inv = SignKeys::phase3_reconstruct_delta(&delta_vec);
 
     //////////////////////////////////////////////////////////////////////////////
     // decommit to gamma_i
-    assert!(client.broadcast(
+    let mut decommit_vec: Vec<SignDecommitPhase1> = client.exchange_data(
+        THRESHOLD+1,
         "round4",
-        serde_json::to_string(&decommit).unwrap(),
-    )
-    .is_ok());
-    let round4_ans_vec = client.poll_for_broadcasts(
-        THRESHOLD + 1,
-        "round4",
+        decommit
     );
 
-    let mut decommit_vec: Vec<SignDecommitPhase1> = Vec::new();
-    format_vec_from_reads(
-        &round4_ans_vec,
-        party_num_int as usize,
-        decommit,
-        &mut decommit_vec,
-    );
     let decomm_i = decommit_vec.remove((party_num_int - 1) as usize);
     bc1_vec.remove((party_num_int - 1) as usize);
     let b_proof_vec = (0..m_b_gamma_rec_vec.len())
@@ -326,55 +275,27 @@ pub fn sign(
     let (phase5_com, phase_5a_decom, helgamal_proof, dlog_proof_rho) = local_sig.phase5a_broadcast_5b_zkproof();
 
     //phase (5A)  broadcast commit
-    assert!(client.broadcast(
+    let mut commit5a_vec: Vec<Phase5Com1> = client.exchange_data(
+        THRESHOLD+1,
         "round5",
-        serde_json::to_string(&phase5_com).unwrap(),
-    )
-    .is_ok());
-    let round5_ans_vec = client.poll_for_broadcasts(
-        THRESHOLD + 1,
-        "round5",
-    );
-
-    let mut commit5a_vec: Vec<Phase5Com1> = Vec::new();
-    format_vec_from_reads(
-        &round5_ans_vec,
-        party_num_int.clone() as usize,
-        phase5_com,
-        &mut commit5a_vec,
+        phase5_com
     );
 
     //phase (5B)  broadcast decommit and (5B) ZK proof
-    assert!(client.broadcast(
-        "round6",
-        serde_json::to_string(&(
-            phase_5a_decom.clone(),
-            helgamal_proof.clone(),
-            dlog_proof_rho.clone()
-        ))
-        .unwrap(),
-    )
-    .is_ok());
-    let round6_ans_vec = client.poll_for_broadcasts(
-        THRESHOLD + 1,
-        "round6",
-    );
-
     let mut decommit5a_and_elgamal_and_dlog_vec: Vec<(
         Phase5ADecom1,
         HomoELGamalProof<Secp256k1, Sha256>,
         DLogProof<Secp256k1, Sha256>,
-    )> = Vec::new();
-    format_vec_from_reads(
-        &round6_ans_vec,
-        party_num_int as usize,
+    )> = client.exchange_data(
+        THRESHOLD+1,
+        "round6",
         (
             phase_5a_decom.clone(),
             helgamal_proof.clone(),
-            dlog_proof_rho.clone(),
-        ),
-        &mut decommit5a_and_elgamal_and_dlog_vec,
+            dlog_proof_rho.clone()
+        )
     );
+
     let decommit5a_and_elgamal_vec_includes_i = decommit5a_and_elgamal_and_dlog_vec.clone();
     decommit5a_and_elgamal_and_dlog_vec.remove((party_num_int - 1) as usize);
     commit5a_vec.remove((party_num_int - 1) as usize);
@@ -399,41 +320,17 @@ pub fn sign(
         .expect("error phase5");
 
     //////////////////////////////////////////////////////////////////////////////
-    assert!(client.broadcast(
-        "round7",
-        serde_json::to_string(&phase5_com2).unwrap(),
-    )
-    .is_ok());
-    let round7_ans_vec = client.poll_for_broadcasts(
+    let mut commit5c_vec: Vec<Phase5Com2> = client.exchange_data(
         THRESHOLD + 1,
         "round7",
-    );
-
-    let mut commit5c_vec: Vec<Phase5Com2> = Vec::new();
-    format_vec_from_reads(
-        &round7_ans_vec,
-        party_num_int.clone() as usize,
-        phase5_com2,
-        &mut commit5c_vec,
+        phase5_com2
     );
 
     //phase (5B)  broadcast decommit and (5B) ZK proof
-    assert!(client.broadcast(
-        "round8",
-        serde_json::to_string(&phase_5d_decom2).unwrap(),
-    )
-    .is_ok());
-    let round8_ans_vec = client.poll_for_broadcasts(
+    let mut decommit5d_vec: Vec<Phase5DDecom2> = client.exchange_data(
         THRESHOLD + 1,
         "round8",
-    );
-
-    let mut decommit5d_vec: Vec<Phase5DDecom2> = Vec::new();
-    format_vec_from_reads(
-        &round8_ans_vec,
-        party_num_int.clone() as usize,
-        phase_5d_decom2.clone(),
-        &mut decommit5d_vec,
+        phase_5d_decom2
     );
 
     let phase_5a_decomm_vec_includes_i = (0..THRESHOLD + 1)
@@ -448,22 +345,10 @@ pub fn sign(
         .expect("bad com 5d");
 
     //////////////////////////////////////////////////////////////////////////////
-    assert!(client.broadcast(
-        "round9",
-        serde_json::to_string(&s_i).unwrap(),
-    )
-    .is_ok());
-    let round9_ans_vec = client.poll_for_broadcasts(
+    let mut s_i_vec: Vec<FE> = client.exchange_data(
         THRESHOLD + 1,
         "round9",
-    );
-
-    let mut s_i_vec: Vec<FE> = Vec::new();
-    format_vec_from_reads(
-        &round9_ans_vec,
-        party_num_int.clone() as usize,
-        s_i,
-        &mut s_i_vec,
+        s_i
     );
 
     s_i_vec.remove((party_num_int - 1) as usize);
