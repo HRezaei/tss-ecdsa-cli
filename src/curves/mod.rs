@@ -1,7 +1,7 @@
 use std::time::Duration;
 use curv::cryptographic_primitives::hashing::Digest;
 use curv::cryptographic_primitives::proofs::sigma_dlog::DLogProof;
-use curv::elliptic::curves::{Curve, Scalar};
+use curv::elliptic::curves::{Curve, Point, Scalar};
 use crate::common::Client;
 use crate::eddsa::signer::exchange_data;
 
@@ -68,6 +68,12 @@ fn generate_shared_chain_code<E: Curve, H: Digest + Clone>(client: Client,
         delay,
         chain_code_i
     );
+
+    let all_commitments_are_satisfied = chain_codes.iter()
+        .enumerate()
+        .all(|(index, x)| (x * Point::<E>::generator()) == dlog_proof_vec[index].pk);
+
+    assert!(all_commitments_are_satisfied);
 
     let (head, tail) = chain_codes.split_at(1);
     let chain_code = tail.iter().fold(head[0].clone(), |acc, x| acc + x);
