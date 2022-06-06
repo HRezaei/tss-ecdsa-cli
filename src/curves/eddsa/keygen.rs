@@ -7,16 +7,23 @@ use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
 use curv::elliptic::curves::{Ed25519};
 use multi_party_eddsa::Error;
 use multi_party_eddsa::Error::InvalidKey;
-use multi_party_eddsa::protocols::thresholdsig::{KeyGenBroadcastMessage1, KeyGenDecommitMessage1, Keys, Parameters};
+use multi_party_eddsa::protocols::thresholdsig::{KeyGenBroadcastMessage1, KeyGenDecommitMessage1, Keys, Parameters, SharedKeys};
 use sha2::Sha512;
 
 use crate::common::{AEAD, aes_decrypt, aes_encrypt, AES_KEY_BYTES_LEN,
                     broadcast, Client, Params, PartySignup, poll_for_broadcasts,
                     poll_for_p2p, sendp2p, signup};
-use crate::eddsa::{CURVE_NAME, FE, GE};
+use crate::eddsa::{CURVE_NAME, FE, GE, read_keygen_fragment_file};
 
+pub struct KeygenFragment {
+    pub party_keys: Keys,
+    pub shared_keys: SharedKeys,
+    pub party_id: u16,
+    pub vss_scheme_vec: Vec<VerifiableSS<Ed25519>>,
+    pub Y: GE
+}
 
-pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) {
+pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>, rotate: bool) {
     let THRESHOLD: u16 = params[0].parse::<u16>().unwrap();
     let PARTIES: u16 = params[1].parse::<u16>().unwrap();
     let client = Client::new(addr.clone());
@@ -39,7 +46,13 @@ pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) {
     };
     println!("number: {:?}, uuid: {:?}, curve: {:?}", party_num_int, uuid, CURVE_NAME);
 
-    let party_keys = Keys::phase1_create(party_num_int);
+    let party_keys = if rotate {
+        let fragment_data = read_keygen_fragment_file(keys_file_path.to_string());
+        fragment_data.party_keys
+    }
+    else {
+        Keys::phase1_create(party_num_int)
+    };
     let (bc_i, decom_i) = party_keys.phase1_broadcast();
 
     // send commitment to ephemeral public keys, get round 1 commitments of other parties
@@ -97,7 +110,7 @@ pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) {
             let decom_j: KeyGenDecommitMessage1 = serde_json::from_str::<KeyGenDecommitMessage1>(&round2_ans_vec[j]).unwrap();
             point_vec.push(decom_j.clone().y_i);
             blind_vec.push(decom_j.clone().blind_factor);
-            let key_bn: BigInt = (decom_j.y_i * party_keys.keypair.expended_private_key.private_key.clone()).x_coord().unwrap();
+            let key_bn: BigInt = (decom_j.y_i * party_keys.keypair.expanded_private_key.private_key.clone()).x_coord().unwrap();
             let key_bytes = BigInt::to_bytes(&key_bn);
             let mut template: Vec<u8> = vec![0u8; AES_KEY_BYTES_LEN - key_bytes.len()];
             template.extend_from_slice(&key_bytes[..]);

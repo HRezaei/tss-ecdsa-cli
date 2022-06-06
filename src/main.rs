@@ -48,7 +48,12 @@ fn main() {
                     .short("l")
                     .long("alg")
                     .takes_value(true)
-                    .help("Either ecdsa (default) or eddsa")),
+                    .help("Either ecdsa (default) or eddsa"))
+                .arg(Arg::with_name("refresh")
+                    .short("r")
+                    .long("refresh")
+                    .takes_value(false)
+                    .help("Set refresh flag to perform key rotation.")),
             SubCommand::with_name("pubkey").about("Get X,Y of a pub key")
                 .arg(Arg::with_name("keysfile")
                     .required(true)
@@ -142,9 +147,11 @@ fn main() {
                 .unwrap_or("")
                 .split("/")
                 .collect();
+
+            let rotate = sub_matches.is_present("refresh");
             match curve {
-                "ecdsa" => ecdsa::keygen::run_keygen(&addr, &keysfile_path, &params),
-                "eddsa" => eddsa::keygen::run_keygen(&addr, &keysfile_path, &params),
+                "ecdsa" => ecdsa::keygen::run_keygen(&addr, &keysfile_path, &params, rotate),
+                "eddsa" => eddsa::keygen::run_keygen(&addr, &keysfile_path, &params, rotate),
                 _ => {}
             }
 

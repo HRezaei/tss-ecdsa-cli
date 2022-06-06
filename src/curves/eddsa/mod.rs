@@ -2,11 +2,11 @@ use std::fs;
 use curv::arithmetic::Converter;
 use curv::BigInt;
 use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
-use curv::elliptic::curves::{Ed25519, Scalar};
-use multi_party_eddsa::protocols::{FE, GE};
+use curv::elliptic::curves::{Ed25519, Point, Scalar};
 use multi_party_eddsa::protocols::thresholdsig::{Keys, SharedKeys};
 use serde_json::{json, Value};
 use crate::common::Params;
+use crate::eddsa::keygen::KeygenFragment;
 use crate::eddsa::signer::update_hd_derived_public_key;
 use crate::hd_keys;
 
@@ -16,6 +16,8 @@ mod test;
 
 pub static CURVE_NAME: &str = "EdDSA";
 
+pub type GE = Point<Ed25519>;
+pub type FE = Scalar<Ed25519>;
 
 pub fn sign(manager_address:String, key_file_path: String, params: Vec<&str>, message_str:String, path: &str)
             -> Value {
@@ -78,4 +80,27 @@ pub fn run_pubkey(keys_file_path:&str, path:&str) -> Value {
                 "path": path,
             });
     ret_dict
+}
+
+fn read_keygen_fragment_file(fragment_path: String) -> KeygenFragment{
+    // Read data from keys file
+    let data = fs::read_to_string(fragment_path.clone()).expect(
+        format!("Unable to load keys file at location: {}", fragment_path).as_str(),
+    );
+
+    let (party_keys, shared_keys, party_id, vss_scheme_vector, public_key): (
+        Keys,
+        SharedKeys,
+        u16,
+        Vec<VerifiableSS<Ed25519>>,
+        GE,
+    ) = serde_json::from_str(&data).expect("Could not parse content of the key file");
+
+    KeygenFragment {
+        party_keys,
+        shared_keys,
+        party_id,
+        vss_scheme_vec: vss_scheme_vector,
+        Y: public_key
+    }
 }
