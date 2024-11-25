@@ -28,7 +28,7 @@ sha2 = "0.9"
 rand = "0.8"
 ring = "0.17.0-alpha.11"
 data-encoding="2.3.3"
-rustc-serialize="0.3"
+rustc-serialize="0.3.25"
 ttlhashmap="0.1.0"
 itertools="0.10"
 
