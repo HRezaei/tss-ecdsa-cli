@@ -3,18 +3,25 @@ pub mod hd_keys;
 
 pub mod signing_room;
 
-use std::{thread, time, time::Duration};
+use std::{fs, thread, time, time::Duration};
 use std::time::Instant;
 
 use aes_gcm::{Aes256Gcm, Nonce};
 use aes_gcm::aead::{Aead, NewAead};
-
+use curv::arithmetic::{Zero};
+use curv::BigInt;
+use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
+use curv::elliptic::curves::{Point, Scalar, Secp256k1};
+use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::{Keys, SharedKeys};
+use paillier::EncryptionKey;
 use reqwest::blocking::Client as RequestClient;
 use serde::{Deserialize, Serialize};
 use rand::{rngs::OsRng, RngCore};
 use sha2::{Sha256, Digest};
 
 pub type Key = String;
+
+pub(crate) const MAX_FIRST_PRIMES: usize =  2_i64.pow(25) as usize;
 
 #[derive(Clone)]
 pub struct Client {
@@ -341,4 +348,68 @@ pub fn sha256_digest(input: &[u8]) -> String {
     sha256.update(input);
     let hash: String = format!("{:X}", sha256.finalize());
     hash
+}
+
+pub(crate) fn generate_primes(limit: usize) -> Vec<usize> {
+    let mut sieve = vec![true; limit];
+    sieve[0] = false; // 0 is not prime
+    sieve[1] = false; // 1 is not prime
+
+    // Sieve of Eratosthenes
+    for i in 2..(limit as f64).sqrt() as usize + 1 {
+        if sieve[i] {
+            for j in (i * i..limit).step_by(i) {
+                sieve[j] = false;
+            }
+        }
+    }
+
+    // Collect primes
+    sieve.into_iter()
+        .enumerate()
+        .filter_map(|(i, is_prime)| if is_prime { Some(i) } else { None })
+        .collect()
+}
+
+pub(crate) fn check_key_file(keysfile_path:&str, limit: usize) -> bool {
+    // Read data from keys file
+    let data = fs::read_to_string(keysfile_path).expect(
+        format!("Unable to load keys file at location: {}", keysfile_path).as_str(),
+    );
+
+    let (_party_keys, _chain_code, _shared_keys, _party_id, _vss_scheme_vec, paillier_key_vector, _y_sum): (
+        Keys,
+        Scalar<Secp256k1>,
+        SharedKeys,
+        u16,
+        Vec<VerifiableSS<Secp256k1>>,
+        Vec<EncryptionKey>,
+        Point<Secp256k1>,
+    ) = serde_json::from_str(&data).unwrap();
+
+    println!("MAX_FIRST_PRIMES is set to: {:?}", MAX_FIRST_PRIMES);
+
+    // Generate the first N primes using the Sieve of Eratosthenes
+    let primes = generate_primes(limit);
+    let mut failed = false;
+    println!("Checking against first {:?} primes", primes.len());
+
+    println!("Checking paillier_key_vector[..].n");
+    for paillier_key in paillier_key_vector.iter() {
+        failed = failed && is_divisible_by_first_n_primes(paillier_key.n.clone(), primes.clone());
+    }
+
+    println!("Largest prime checked {:?}", primes[primes.len()-1]);
+    failed
+}
+
+pub(crate) fn is_divisible_by_first_n_primes(pub_key: BigInt, primes_to_check: Vec<usize>) -> bool {
+    let mut failed = false;
+    for &prime in primes_to_check.as_slice() {
+        if (pub_key.clone() % BigInt::from(prime as u32)).is_zero() {
+            println!("Failed! Divisible by {:?}", prime);
+            failed = true; // The public key is divisible by one of the primes
+        }
+    }
+    failed // The public key is not divisible by any of the primes
 }

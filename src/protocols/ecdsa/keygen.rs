@@ -14,9 +14,10 @@ use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::{
 use paillier::EncryptionKey;
 use sha2::{Sha256};
 
-use crate::common::{aes_decrypt, aes_encrypt, broadcast, poll_for_broadcasts, poll_for_p2p, sendp2p, Params, PartySignup, AEAD, Client, keygen_signup};
+use crate::common::{aes_decrypt, aes_encrypt, broadcast, poll_for_broadcasts, poll_for_p2p, sendp2p, Params, PartySignup, AEAD, Client, keygen_signup, is_divisible_by_first_n_primes, generate_primes, MAX_FIRST_PRIMES};
 use crate::protocols::{generate_shared_chain_code};
 use crate::ecdsa::{CURVE_NAME, FE, GE};
+
 
 pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
     let THRESHOLD: u16 = params[0].parse::<u16>().unwrap();
@@ -55,6 +56,10 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
     );
 
     let (bc_i, decom_i) = party_keys.phase1_broadcast_phase3_proof_of_correct_key();
+
+    let primes = generate_primes(MAX_FIRST_PRIMES);
+    let pailiar_key_for_checking = bc_i.clone();
+    is_divisible_by_first_n_primes(pailiar_key_for_checking.e.n, primes);
 
     // send commitment to ephemeral public keys, get round 1 commitments of other parties
     assert!(broadcast(

@@ -12,10 +12,11 @@ extern crate serde_json;
 use std::env;
 use clap::{App, AppSettings, Arg, SubCommand};
 
-use common::{manager, hd_keys};
+use common::{manager, hd_keys, check_key_file};
 
 use protocols::ecdsa;
 use protocols::eddsa;
+use crate::common::MAX_FIRST_PRIMES;
 
 mod common;
 mod protocols;
@@ -113,11 +114,22 @@ fn main() {
                     .index(1)
                     .takes_value(true)
                     .help("Source keys file"))
-                .arg(Arg::with_name("output_file")
+                .arg(Arg::with_name("Source keys file")
                     .required(true)
                     .index(2)
                     .takes_value(true)
-                    .help("Output keys file"))
+                    .help("Output keys file")),
+            SubCommand::with_name("safety_check").about("Checks a given key file against first n primes")
+                .arg(Arg::with_name("input_file")
+                    .required(true)
+                    .index(1)
+                    .takes_value(true)
+                    .help("Source keys file"))
+                .arg(Arg::with_name("max_first")
+                    .required(false)
+                    .index(2)
+                    .takes_value(true)
+                    .help("How many prime numbers should be checked?"))
         ])
         .get_matches();
 
@@ -182,6 +194,18 @@ fn main() {
             let destination_path = sub_matches.value_of("output_file").unwrap_or("").to_string();
 
             ecdsa::curv7_conversion::convert_store_file(source_path, destination_path);
+        }
+        ("safety_check", Some(sub_matches)) => {
+            let source_path = sub_matches.value_of("input_file").unwrap_or("").to_string();
+            let limit = sub_matches.value_of("max_first").unwrap_or(MAX_FIRST_PRIMES.to_string().as_str()).parse::<usize>().unwrap();
+
+            let result: bool = check_key_file(source_path.as_str(), limit);
+            if result {
+                println!("Key file check failed.");
+            }
+            else {
+                println!("Key file check successful!");
+            }
         }
         _ => {}
     }
