@@ -396,7 +396,9 @@ pub(crate) fn check_key_file(keysfile_path:&str, limit: usize) -> bool {
 
     println!("Checking paillier_key_vector[..].n");
     for paillier_key in paillier_key_vector.iter() {
-        failed = failed && is_divisible_by_first_n_primes(paillier_key.n.clone(), primes.clone());
+        if is_divisible_by_first_n_primes(paillier_key.n.clone(), primes.clone()) {
+            failed = true;
+        };
     }
 
     println!("Largest prime checked {:?}", primes[primes.len()-1]);
