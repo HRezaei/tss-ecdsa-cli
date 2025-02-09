@@ -11,7 +11,7 @@ use aes_gcm::aead::{Aead, NewAead};
 
 use reqwest::blocking::Client as RequestClient;
 use serde::{Deserialize, Serialize};
-use rand::{rngs::OsRng, RngCore};
+use rand::{rngs::OsRng, TryRngCore};
 use sha2::{Sha256, Digest};
 
 pub type Key = String;
@@ -98,7 +98,7 @@ pub fn aes_encrypt(key: &[u8], plaintext: &[u8]) -> AEAD {
     let cipher = Aes256Gcm::new(aes_key);
 
     let mut nonce = [0u8; 12];
-    OsRng.fill_bytes(&mut nonce);
+    let _ = OsRng.try_fill_bytes(&mut nonce);
     let nonce = Nonce::from_slice(&nonce);
 
     let ciphertext = cipher

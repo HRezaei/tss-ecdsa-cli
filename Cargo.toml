@@ -23,7 +23,7 @@ curv = { package = "curv-kzen", version = "0.9", default-features = false }
 clap = { version = "2.34.0", features = ["yaml"] }
 hmac = "0.11"
 sha2 = "0.9.9"
-rand = "0.8.5"
+rand = "0.9.0"
 
 ttlhashmap="0.1.0"
 
