@@ -36,7 +36,7 @@ pub fn check_sig(
     msg: &BigInt,
     pk: &Point<Secp256k1>,
 ) {
-    use secp256k1::{verify, Message, PublicKey, PublicKeyFormat, Signature};
+    use libsecp256k1::{verify, Message, PublicKey, PublicKeyFormat, Signature};
 
     let raw_msg = BigInt::to_bytes(msg);
     let mut msg: Vec<u8> = Vec::new(); // padding
@@ -59,7 +59,7 @@ pub fn check_sig(
     compact.extend(vec![0u8; 32 - bytes_s.len()]);
     compact.extend(bytes_s.iter());
 
-    let secp_sig = Signature::parse_slice(compact.as_slice()).unwrap();
+    let secp_sig = Signature::parse_standard_slice(compact.as_slice()).unwrap();
 
     let is_correct = verify(&msg, &secp_sig, &pk);
     assert!(is_correct);
