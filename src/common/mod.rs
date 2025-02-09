@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use rand::{rngs::OsRng, RngCore};
 use sha2::{Sha256, Digest};
 
+
 pub type Key = String;
 
 pub(crate) const MAX_FIRST_PRIMES: usize =  2_i64.pow(25) as usize;
@@ -351,24 +352,9 @@ pub fn sha256_digest(input: &[u8]) -> String {
 }
 
 pub(crate) fn generate_primes(limit: usize) -> Vec<usize> {
-    let mut sieve = vec![true; limit];
-    sieve[0] = false; // 0 is not prime
-    sieve[1] = false; // 1 is not prime
+    use slow_primes;
 
-    // Sieve of Eratosthenes
-    for i in 2..(limit as f64).sqrt() as usize + 1 {
-        if sieve[i] {
-            for j in (i * i..limit).step_by(i) {
-                sieve[j] = false;
-            }
-        }
-    }
-
-    // Collect primes
-    sieve.into_iter()
-        .enumerate()
-        .filter_map(|(i, is_prime)| if is_prime { Some(i) } else { None })
-        .collect()
+    slow_primes::Primes::sieve(limit).primes().into_iter().collect()
 }
 
 pub(crate) fn check_key_file(keysfile_path:&str, limit: usize) -> bool {
@@ -389,29 +375,26 @@ pub(crate) fn check_key_file(keysfile_path:&str, limit: usize) -> bool {
 
     println!("MAX_FIRST_PRIMES is set to: {:?}", MAX_FIRST_PRIMES);
 
-    // Generate the first N primes using the Sieve of Eratosthenes
-    let primes = generate_primes(limit);
-    let mut failed = false;
-    println!("Checking against first {:?} primes", primes.len());
 
+    let mut failed = false;
     println!("Checking paillier_key_vector[..].n");
     for paillier_key in paillier_key_vector.iter() {
-        if is_divisible_by_first_n_primes(paillier_key.n.clone(), primes.clone()) {
-            failed = true;
+        if is_divisible_by_first_n_primes(paillier_key.n.clone(), limit) {
+                failed = true;
         };
     }
 
-    println!("Largest prime checked {:?}", primes[primes.len()-1]);
     failed
 }
 
-pub(crate) fn is_divisible_by_first_n_primes(pub_key: BigInt, primes_to_check: Vec<usize>) -> bool {
+pub(crate) fn is_divisible_by_first_n_primes(given_number: BigInt, limit_for_check: usize) -> bool {
     let mut failed = false;
-    for &prime in primes_to_check.as_slice() {
-        if (pub_key.clone() % BigInt::from(prime as u32)).is_zero() {
+    let primes = generate_primes(limit_for_check);
+    for prime in primes.iter() {
+        if (given_number.clone() % BigInt::from(*prime as u32)).is_zero() {
             println!("Failed! Divisible by {:?}", prime);
-            failed = true; // The public key is divisible by one of the primes
+            failed = true; // The given number is divisible by one of the primes
         }
     }
-    failed // The public key is not divisible by any of the primes
+    failed // The given number is not divisible by any of the primes
 }
