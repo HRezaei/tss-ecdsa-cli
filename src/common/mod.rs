@@ -3,8 +3,8 @@ pub mod hd_keys;
 
 pub mod signing_room;
 
-use std::{fs, thread, time, time::Duration};
-use std::time::Instant;
+use std::{env, fs, thread, time};
+use std::time::{Instant, SystemTime, Duration};
 
 use aes_gcm::{Aes256Gcm, Nonce};
 use aes_gcm::aead::{Aead, NewAead};
@@ -14,9 +14,13 @@ use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
 use curv::elliptic::curves::{Point, Scalar, Secp256k1};
 use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::{Keys, SharedKeys};
 use paillier::EncryptionKey;
+use std::process::exit;
+
+use jsonwebtoken::{encode, EncodingKey, Header};
 use reqwest::blocking::Client as RequestClient;
 use serde::{Deserialize, Serialize};
 use rand::{rngs::OsRng, TryRngCore};
+use reqwest::header::{HeaderMap, AUTHORIZATION};
 use sha2::{Sha256, Digest};
 
 
@@ -32,6 +36,10 @@ pub struct Client {
 
 #[allow(dead_code)]
 pub const AES_KEY_BYTES_LEN: usize = 32;
+pub const PARTY_HTTP_AUTH_APIKEY_VAR: &str = "TSS_PARTY_HTTP_AUTH_APIKEY";
+pub const HTTP_AUTH_JWT_EXPIRY_VAR: &str = "TSS_HTTP_AUTH_JWT_TTL";
+pub const HTTP_AUTH_JWT_EXPIRY_DEFAULT: &str = "10";
+const HTTP_AUTH_JWT_SECRET_VAR: &str = "TSS_HTTP_AUTH_JWT_SECRET";
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct AEAD {
@@ -100,6 +108,13 @@ impl Client {
     }
 }
 
+// Define the claims structure expected in the JWT
+#[derive(Debug, Deserialize, Serialize)]
+struct Claims {
+    api_key: String,
+    exp: u64,
+}
+
 #[allow(dead_code)]
 pub fn aes_encrypt(key: &[u8], plaintext: &[u8]) -> AEAD {
     let aes_key = aes_gcm::Key::from_slice(key);
@@ -129,6 +144,35 @@ pub fn aes_decrypt(key: &[u8], aead_pack: AEAD) -> Vec<u8> {
     out.unwrap()
 }
 
+fn generate_jwt() -> String {
+    let http_api_key = env::var(PARTY_HTTP_AUTH_APIKEY_VAR).unwrap_or_else(|_|{
+        eprintln!("Missing env variable: {}", PARTY_HTTP_AUTH_APIKEY_VAR);
+        exit(1);
+    });
+    let jwt_expiry_seconds = env::var(HTTP_AUTH_JWT_EXPIRY_VAR)
+        .unwrap_or(HTTP_AUTH_JWT_EXPIRY_DEFAULT.to_string()).parse::<u64>().unwrap_or_else(|e| {
+        println!("Invalid value: {}", e);
+        exit(1);
+    });
+    let secret_key = env::var(HTTP_AUTH_JWT_SECRET_VAR).unwrap_or_else(|_|{
+        println!("Missing env variable: {}", HTTP_AUTH_JWT_SECRET_VAR);
+        exit(1);
+    });
+    let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+    // Prepare the JWT
+    let claims = Claims {
+        api_key: http_api_key.clone(), // The subject (party identifier)
+        exp: now + jwt_expiry_seconds,
+    };
+
+    let mut header = Header::default();
+    header.kid = Some(http_api_key);
+    let encoding_key = EncodingKey::from_secret(secret_key.as_bytes());
+
+    // Encode the JWT and return the token
+    encode(&header, &claims, &encoding_key).unwrap()
+}
+
 pub fn postb<T>(client: &Client, path: &str, body: T) -> Option<String>
     where
         T: serde::ser::Serialize,
@@ -136,9 +180,18 @@ pub fn postb<T>(client: &Client, path: &str, body: T) -> Option<String>
     let addr = client.address.clone();
     let retries = 3;
     let retry_delay = time::Duration::from_millis(250);
+    let jwt_token = generate_jwt();
+
+    // Create the headers with the API key
+    let mut headers = HeaderMap::new();
+    headers.insert(AUTHORIZATION, format!("Bearer {}", jwt_token).parse().unwrap());
+
     for _i in 1..retries {
         let addr = format!("{}/{}", addr, path);
-        let res = client.client.post(&addr).json(&body).send();
+        let res = client.client.post(&addr)
+            .headers(headers.clone())
+            .json(&body)
+            .send();
 
         if let Ok(res) = res {
             return Some(res.text().unwrap());
