@@ -9,7 +9,6 @@ extern crate paillier;
 extern crate reqwest;
 extern crate serde_json;
 
-use std::env;
 use clap::{App, AppSettings, Arg, SubCommand};
 
 use common::{manager, hd_keys, check_key_file};
@@ -140,11 +139,6 @@ fn main() {
             let path = sub_matches.value_of("path").unwrap_or("");
             let message_str = sub_matches.value_of("message").unwrap_or("");
             let curve = sub_matches.value_of("algorithm").unwrap_or("ecdsa");
-            let chain_code_in_env = match env::var("TSS_CLI_CHAIN_CODE") {
-                Ok(val) => val,
-                Err(_e) => "".to_string(),
-            };
-            let chain_code = sub_matches.value_of("chain_code").unwrap_or(chain_code_in_env.as_str());
 
             let manager_addr = sub_matches
                 .value_of("manager_addr")
@@ -158,7 +152,7 @@ fn main() {
                 .collect();
             let action = matches.subcommand_name().unwrap();
             let result = match curve {
-                "ecdsa" => ecdsa::run_pubkey_or_sign(action, keysfile_path, path, message_str, manager_addr, params, chain_code),
+                "ecdsa" => ecdsa::run_pubkey_or_sign(action, keysfile_path, path, message_str, manager_addr, params),
                 "eddsa" => match action {
                     "sign" => eddsa::sign(manager_addr, keysfile_path.to_string(), params, message_str.to_string(), path),
                     "pubkey" => eddsa::run_pubkey(keysfile_path, path),
