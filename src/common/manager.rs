@@ -1,16 +1,103 @@
+use std::collections::HashMap;
+use std::env;
 use std::sync::RwLock;
-use std::time::{Duration};
-
-use rocket::{Ignite, post, Rocket, routes, State};
+use std::time::Duration;
+use jsonwebtoken::{decode, Algorithm, DecodingKey, TokenData, Validation, decode_header};
+use rocket::{Ignite, post, Rocket, routes, State, async_trait, Request};
+use rocket::http::Status;
+use rocket::outcome::Outcome;
+use rocket::request::FromRequest;
 use rocket::serde::json::Json;
-use serde_json::{json};
+use serde_json::json;
+use jsonwebtoken::errors::{ErrorKind, Result as JwtResult};
 
 use ttlhashmap::TtlHashMap;
 
 use uuid::Uuid;
 
-use crate::common::{Entry, Index, Key, ManagerError, Params, PartySignup, PartySignupRequestBody, SigningPartySignup};
+use crate::common::{Claims, Entry, Index, Key, ManagerError, Params, PartySignup, PartySignupRequestBody, SigningPartySignup};
 use crate::common::signing_room::SigningRoom;
+
+const HTTP_AUTH_KEY_PAIRS_VAR: &str = "TSS_MANAGER_HTTP_AUTH_KEY_PAIRS";
+// Define the ApiKey struct, which will be extracted from the JWT token
+pub struct ApiKeyJwt();
+
+// Implementing FromRequest for ApiKey to validate JWT
+#[async_trait]
+impl<'r> FromRequest<'r> for ApiKeyJwt {
+    type Error = String;
+
+    async fn from_request(request: &'r Request<'_>) -> rocket::request::Outcome<Self, Self::Error> {
+        let user_secret_keys = request.rocket().state::<HashMap<String, String>>()
+            .expect("User secret keys not found");
+
+        // Get the Authorization header
+        if let Some(auth_header) = request.headers().get_one("Authorization") {
+            // The Authorization header will be of the form "Bearer <token>"
+            if let Some(token) = auth_header.strip_prefix("Bearer ") {
+                match validate_jwt(token, user_secret_keys) {
+                    Ok(_token_data) => {
+                        // If JWT is valid, return the ApiKey
+                        Outcome::Success(ApiKeyJwt())
+                    }
+                    Err(_) => {
+                        // If JWT is invalid, return Unauthorized
+                        Outcome::Error((Status::Unauthorized, "Invalid or expired token".to_string()))
+                    }
+                }
+            } else {
+                Outcome::Error((Status::Unauthorized, "Authorization header must start with Bearer".to_string()))
+            }
+        } else {
+            Outcome::Error((Status::Unauthorized, "Authorization header missing".to_string()))
+        }
+    }
+}
+
+
+// Function to validate the JWT
+fn validate_jwt(token: &str, user_secrets: &HashMap<String, String>) -> JwtResult<TokenData<Claims>> { //JwtResult<Claims>
+    // Step 1: Decode the JWT to extract the claims
+    let decoded_token = decode_header(token);
+
+    match decoded_token {
+        Ok(token_data) => {
+            // Step 2: Get the API key from the decoded claims (kid)
+            let api_key = token_data.kid.unwrap();
+
+            // Step 3: Look up the secret key for that user (given api_key)
+            if let Some(user_secret) = user_secrets.get(&api_key) {
+                // Step 4: Validate the JWT using the user's secret key
+                let decoding_key = DecodingKey::from_secret(user_secret.as_bytes());
+                let validation = Validation::new(Algorithm::HS256);
+                decode::<Claims>(token, &decoding_key, &validation)
+            } else {
+                Err(jsonwebtoken::errors::Error::from(ErrorKind::InvalidToken))
+            }
+        }
+        Err(err) => {
+            Err(err)
+        }
+    }
+}
+
+fn parse_user_secrets_from_env() -> HashMap<String, String> {
+    let mut user_secret_keys = HashMap::new();
+    // Read the environment variable
+    if let Ok(secret_string) = env::var(HTTP_AUTH_KEY_PAIRS_VAR) {
+        // Parse the secret string, assuming a format like "user123=secretkey123,user456=secretkey456"
+        for pair in secret_string.split(',') {
+            let mut parts = pair.splitn(2, '=');
+            if let (Some(api_key), Some(secret)) = (parts.next(), parts.next()) {
+                user_secret_keys.insert(api_key.to_string(), secret.to_string());
+            }
+        }
+    } else {
+        eprintln!("{} environment variable is not set.", HTTP_AUTH_KEY_PAIRS_VAR);
+    }
+
+    user_secret_keys
+}
 
 #[rocket::main]
 pub async fn run_manager() -> Result<Rocket<Ignite>, rocket::Error> {
@@ -20,42 +107,13 @@ pub async fn run_manager() -> Result<Rocket<Ignite>, rocket::Error> {
         .unwrap_or("300".to_string()).parse::<u64>().unwrap();
     let db: TtlHashMap<Key, String> = TtlHashMap::new(Duration::from_secs(ttl));
     let db_mtx = RwLock::new(db);
-    //rocket::custom(my_config).mount("/", routes![get, set]).manage(db_mtx).launch();
 
-    /////////////////////////////////////////////////////////////////
-    //////////////////////////init signups://////////////////////////
-    /////////////////////////////////////////////////////////////////
-
-    /*for curve_name in ["ECDSA", "EdDSA"] {
-        let keygen_key = "signup-keygen-".to_string() + curve_name;
-        let sign_key = "signup-sign-".to_string() + curve_name;
-
-        let uuid_keygen = Uuid::new_v4().to_string();
-        let uuid_sign = Uuid::new_v4().to_string();
-
-        let party1 = 0;
-        let party_signup_keygen = PartySignup {
-            number: party1,
-            uuid: uuid_keygen,
-        };
-        let party_signup_sign = PartySignup {
-            number: party1,
-            uuid: uuid_sign,
-        };
-        {
-            let mut hm = db_mtx.write().unwrap();
-            hm.insert(
-                keygen_key,
-                serde_json::to_string(&party_signup_keygen).unwrap(),
-            );
-            hm.insert(sign_key, serde_json::to_string(&party_signup_sign).unwrap());
-        }
-    }*/
-    /////////////////////////////////////////////////////////////////
+    let user_secret_keys: HashMap<String, String> = parse_user_secrets_from_env();
 
     rocket::build()
         .mount("/", routes![get, set, signup_keygen, signup_sign])
         .manage(db_mtx)
+        .manage(user_secret_keys)
         .launch()
         .await
 }
@@ -64,6 +122,7 @@ pub async fn run_manager() -> Result<Rocket<Ignite>, rocket::Error> {
 fn get(
     db_mtx: &State<RwLock<TtlHashMap<Key, String>>>,
     request: Json<Index>,
+    _jwt_guard: ApiKeyJwt
 ) -> Json<Result<Entry, ManagerError>> {
     let index: Index = request.0;
     let mut hm = db_mtx.write().unwrap();
@@ -84,7 +143,10 @@ fn get(
 }
 
 #[post("/set", format = "json", data = "<request>")]
-fn set(db_mtx: &State<RwLock<TtlHashMap<Key, String>>>, request: Json<Entry>) -> Json<Result<(), ()>> {
+fn set(db_mtx: &State<RwLock<TtlHashMap<Key, String>>>,
+       request: Json<Entry>,
+       _jwt_guard: ApiKeyJwt
+) -> Json<Result<(), ()>> {
     let entry: Entry = request.0;
     let mut hm = db_mtx.write().unwrap();
     hm.insert(entry.key.clone(), entry.value.clone());
@@ -95,6 +157,7 @@ fn set(db_mtx: &State<RwLock<TtlHashMap<Key, String>>>, request: Json<Entry>) ->
 fn signup_keygen(
     db_mtx: &State<RwLock<TtlHashMap<Key, String>>>,
     request: Json<(Params, String)>,
+    _jwt_guard: ApiKeyJwt
 ) -> Json<Result<PartySignup, ()>> {
     let parties = request.0.0.parties.parse::<u16>().unwrap();
     let curve = &request.0.1.parse::<String>().unwrap();
@@ -131,6 +194,7 @@ fn signup_keygen(
 fn signup_sign(
     db_mtx: &State<RwLock<TtlHashMap<Key, String>>>,
     request: Json<PartySignupRequestBody>,
+    _jwt_guard: ApiKeyJwt
 ) -> Json<Result<SigningPartySignup, ManagerError>> {
     let threshold = request.clone().threshold;
     let room_id = request.room_id.clone();
