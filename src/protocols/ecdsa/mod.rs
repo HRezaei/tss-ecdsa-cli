@@ -73,14 +73,13 @@ pub fn run_pubkey_or_sign(
     message_str:&str,
     manager_addr:String,
     params:Vec<&str>,
-    chain_code_hex: &str
 ) -> Value
 {
     // Read data from keys file
     let data = fs::read_to_string(keysfile_path).expect(
         format!("Unable to load keys file at location: {}", keysfile_path).as_str(),
     );
-    let (party_keys, mut chain_code, shared_keys, party_id, mut vss_scheme_vec, paillier_key_vector, y_sum): (
+    let (party_keys, chain_code, shared_keys, party_id, mut vss_scheme_vec, paillier_key_vector, y_sum): (
         Keys,
         Scalar<Secp256k1>,
         SharedKeys,
@@ -90,9 +89,6 @@ pub fn run_pubkey_or_sign(
         GE,
     ) = serde_json::from_str(&data).unwrap();
 
-    if !chain_code_hex.is_empty() {
-        chain_code = Scalar::<Secp256k1>::from_bytes(hex::decode(chain_code_hex).unwrap().as_slice()).unwrap()
-    }
     // Get root pub key or HD pub key at specified path
     let (f_l_new, y_sum) = match path.is_empty() {
         true => (Scalar::<Secp256k1>::zero(), y_sum),
