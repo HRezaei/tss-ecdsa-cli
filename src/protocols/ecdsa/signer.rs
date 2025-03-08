@@ -5,6 +5,7 @@ extern crate paillier;
 extern crate reqwest;
 extern crate serde_json;
 
+use std::process::exit;
 use std::time;
 
 use curv::cryptographic_primitives::proofs::sigma_correct_homomorphic_elgamal_enc::HomoELGamalProof;
@@ -25,7 +26,7 @@ use sha2::Sha256;
 use crate::common::{signup, Client};
 use crate::ecdsa::{CURVE_NAME, FE, GE};
 use crate::common::{broadcast, poll_for_broadcasts, poll_for_p2p, sendp2p, Params, PartySignup, sha256_digest};
-
+use crate::protocols::verify_dlog_proofs;
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct TupleKey {
@@ -440,6 +441,13 @@ pub fn sign(
     let phase_5a_dlog_vec = (0..total_parties - 1)
         .map(|i| decommit5a_and_elgamal_and_dlog_vec[i as usize].2.clone())
         .collect::<Vec<DLogProof<Secp256k1, Sha256>>>();
+
+    let _ = verify_dlog_proofs((total_parties - 1) as usize, &phase_5a_dlog_vec, (total_parties - 1) as usize)
+        .map_err(|e| {
+            println!("Error: Bad dlog proof.");
+            exit(1);
+        });
+
     let (phase5_com2, phase_5d_decom2) = local_sig
         .phase5c(
             &phase_5a_decomm_vec,
