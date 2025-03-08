@@ -40,6 +40,7 @@ pub const PARTY_HTTP_AUTH_APIKEY_VAR: &str = "TSS_PARTY_HTTP_AUTH_APIKEY";
 pub const HTTP_AUTH_JWT_EXPIRY_VAR: &str = "TSS_HTTP_AUTH_JWT_TTL";
 pub const HTTP_AUTH_JWT_EXPIRY_DEFAULT: &str = "10";
 const HTTP_AUTH_JWT_SECRET_VAR: &str = "TSS_HTTP_AUTH_JWT_SECRET";
+pub const LOG_LEVEL_ENV_VAR: &str = "TSS_LOG_LEVEL";
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct AEAD {
@@ -97,6 +98,14 @@ pub struct ManagerError {
 pub struct Params {
     pub parties: String,
     pub threshold: String,
+}
+
+pub fn error_message(normal_message: &str, debug_message: &str) -> String {
+    let log_level = std::env::var(LOG_LEVEL_ENV_VAR).unwrap_or(String::from("production"));
+    match log_level.as_str() {
+        "debug" => debug_message.to_string(),
+        _ => normal_message.to_string()
+    }
 }
 
 impl Client {
@@ -260,7 +269,13 @@ pub fn poll_for_broadcasts(
                 // add delay to allow the server to process request:
                 thread::sleep(delay);
                 let res_body = postb(&client, "get", index.clone()).unwrap();
-                let answer: Result<Entry, ManagerError> = serde_json::from_str(&res_body).unwrap();
+                let answer: Result<Entry, ManagerError> = serde_json::from_str(&res_body)
+                    .unwrap_or_else(|e| {
+                        println!("{}", error_message("Error in calling manager",
+                                                    format!("Error in calling manager {}", e).as_str())
+                        );
+                        exit(1);
+                    });
                 match answer {
                     Ok(answer) => {
                         ans_vec.push(answer.value);

@@ -15,7 +15,7 @@ use ttlhashmap::TtlHashMap;
 
 use uuid::Uuid;
 
-use crate::common::{Claims, Entry, Index, Key, ManagerError, Params, PartySignup, PartySignupRequestBody, SigningPartySignup};
+use crate::common::{error_message, Claims, Entry, Index, Key, ManagerError, Params, PartySignup, PartySignupRequestBody, SigningPartySignup};
 use crate::common::signing_room::SigningRoom;
 
 const HTTP_AUTH_KEY_PAIRS_VAR: &str = "TSS_MANAGER_HTTP_AUTH_KEY_PAIRS";
@@ -136,7 +136,9 @@ fn get(
         }
         None => {
             Json(Err(ManagerError{
-                error: "Key not found: ".to_string() + index.key.as_str()
+                error: error_message("Invalid request",
+                                     format!("Key not found: {}", index.key.as_str()).as_str()
+                )
             }))
         },
     }
