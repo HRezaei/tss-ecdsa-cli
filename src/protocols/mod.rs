@@ -18,11 +18,16 @@ pub fn verify_dlog_proofs<E: Curve, H:Digest + Clone>(
     dlog_proofs_vec: &[DLogProof<E, H>],
     y_vec_len: usize,
 ) -> Result<(), Error> {
+    assert_ne!(dlog_proofs_vec.len(), 0);
     assert_eq!(y_vec_len, share_count);
     assert_eq!(dlog_proofs_vec.len(), share_count);
 
     let xi_dlog_verify =
-        (0..y_vec_len).all(|i| DLogProof::verify(&dlog_proofs_vec[i]).is_ok());
+        (0..y_vec_len).all(|i| DLogProof::verify(&dlog_proofs_vec[i]).is_ok() &&
+            !dlog_proofs_vec[i].pk.is_zero() &&
+            !dlog_proofs_vec[i].challenge_response.is_zero() &&
+            !dlog_proofs_vec[i].pk_t_rand_commitment.is_zero()
+        );
 
     if xi_dlog_verify {
         Ok(())
