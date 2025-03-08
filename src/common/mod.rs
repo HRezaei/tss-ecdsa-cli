@@ -92,6 +92,10 @@ impl Client {
     }
 }
 
+pub fn validate_hex_string(message: &str) -> bool {
+    !message.is_empty() && message.chars().all(|c| c.is_ascii_hexdigit())
+}
+
 #[allow(dead_code)]
 pub fn aes_encrypt(key: &[u8], plaintext: &[u8]) -> AEAD {
     let aes_key = aes_gcm::Key::from_slice(key);

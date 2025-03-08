@@ -1,11 +1,12 @@
 use std::fs;
+use std::process::exit;
 use curv::arithmetic::Converter;
 use curv::BigInt;
 use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
 use curv::elliptic::curves::{Ed25519, Scalar, Point};
 use multi_party_eddsa::protocols::thresholdsig::{Keys, SharedKeys};
 use serde_json::{json, Value};
-use crate::common::Params;
+use crate::common::{validate_hex_string, Params};
 use crate::eddsa::signer::update_hd_derived_public_key;
 use crate::hd_keys;
 
@@ -21,6 +22,11 @@ pub static CURVE_NAME: &str = "EdDSA";
 
 pub fn sign(manager_address:String, key_file_path: String, params: Vec<&str>, message_str:String, path: &str)
             -> Value {
+    if !validate_hex_string(message_str.as_str()) {
+        println!("Invalid message string.");
+        exit(1);
+    }
+
     let params = Params {
         threshold: params[0].to_string(),
         parties: params[1].to_string(),
