@@ -9,7 +9,7 @@ use ttlhashmap::TtlHashMap;
 
 use uuid::Uuid;
 
-use crate::common::{Entry, Index, Key, ManagerError, Params, PartySignup, PartySignupRequestBody, SigningPartySignup};
+use crate::common::{error_message, Entry, Index, Key, ManagerError, Params, PartySignup, PartySignupRequestBody, SigningPartySignup};
 use crate::common::signing_room::SigningRoom;
 
 #[rocket::main]
@@ -77,7 +77,9 @@ fn get(
         }
         None => {
             Json(Err(ManagerError{
-                error: "Key not found: ".to_string() + index.key.as_str()
+                error: error_message("Invalid request",
+                                     format!("Key not found: {}", index.key.as_str()).as_str()
+                )
             }))
         },
     }

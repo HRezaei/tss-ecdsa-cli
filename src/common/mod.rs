@@ -4,6 +4,7 @@ pub mod hd_keys;
 pub mod signing_room;
 
 use std::{thread, time, time::Duration};
+use std::process::exit;
 use std::time::Instant;
 
 use aes_gcm::{Aes256Gcm, Nonce};
@@ -24,6 +25,7 @@ pub struct Client {
 
 #[allow(dead_code)]
 pub const AES_KEY_BYTES_LEN: usize = 32;
+pub const LOG_LEVEL_ENV_VAR: &str = "TSS_LOG_LEVEL";
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct AEAD {
@@ -81,6 +83,14 @@ pub struct ManagerError {
 pub struct Params {
     pub parties: String,
     pub threshold: String,
+}
+
+pub fn error_message(normal_message: &str, debug_message: &str) -> String {
+    let log_level = std::env::var(LOG_LEVEL_ENV_VAR).unwrap_or(String::from("production"));
+    match log_level.as_str() {
+        "debug" => debug_message.to_string(),
+        _ => normal_message.to_string()
+    }
 }
 
 impl Client {
@@ -195,7 +205,13 @@ pub fn poll_for_broadcasts(
                 // add delay to allow the server to process request:
                 thread::sleep(delay);
                 let res_body = postb(&client, "get", index.clone()).unwrap();
-                let answer: Result<Entry, ManagerError> = serde_json::from_str(&res_body).unwrap();
+                let answer: Result<Entry, ManagerError> = serde_json::from_str(&res_body)
+                    .unwrap_or_else(|e| {
+                        println!("{}", error_message("Error in calling manager",
+                                                    format!("Error in calling manager {}", e).as_str())
+                        );
+                        exit(1);
+                    });
                 match answer {
                     Ok(answer) => {
                         ans_vec.push(answer.value);
