@@ -6,8 +6,8 @@ extern crate serde_json;
 use serde_json::{json, Value};
 
 use std::fs;
-
-use crate::common::{hd_keys, Params};
+use std::process::exit;
+use crate::common::{hd_keys, validate_hex_string, Params};
 
 //use aes_gcm::aead::{NewAead};
 
@@ -76,6 +76,10 @@ pub fn run_pubkey_or_sign(
     chain_code_hex: &str
 ) -> Value
 {
+    if !validate_hex_string(message_str) {
+        println!("Invalid message string.");
+        exit(1);
+    }
     // Read data from keys file
     let data = fs::read_to_string(keysfile_path).expect(
         format!("Unable to load keys file at location: {}", keysfile_path).as_str(),
