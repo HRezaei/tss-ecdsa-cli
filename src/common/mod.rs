@@ -283,8 +283,9 @@ pub fn keygen_signup(client: &Client, params: &Params, curve_name: &str) -> (u16
 
 
 pub fn signup(path: &str, client: &Client, params: &Params, room_id: String, party_id: u16, curve_name: &str) -> Result<(PartySignup, u16), ()> {
+    let threshold = params.threshold.parse::<u16>().unwrap();
     let mut request_body = PartySignupRequestBody{
-        threshold: params.threshold.parse::<u16>().unwrap(),
+        threshold: threshold,
         room_id: room_id.clone(),
         party_number: party_id,
         party_uuid: "".to_string(),
@@ -342,10 +343,18 @@ pub fn signup(path: &str, client: &Client, params: &Params, room_id: String, par
         }
     };
 
-    return Ok((output, total_parties));
+    if total_parties <= threshold {
+        println!("Not enough parties are joined: {}", total_parties);
+        exit(1);
+    }
+
+    if  params.parties.parse::<u16>().unwrap() < output.number  {
+        println!("Invalid ID assigned to party: {}", output.number);
+        exit(1);
+    }
+
+    Ok((output, total_parties))
 }
-
-
 
 pub fn sha256_digest(input: &[u8]) -> String {
     let mut sha256 = Sha256::new();
