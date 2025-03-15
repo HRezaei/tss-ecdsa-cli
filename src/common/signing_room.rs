@@ -53,7 +53,10 @@ impl SigningRoom {
         party.last_ping < now - timeout
     }
 
-    pub fn add_party(&mut self, party_number: u16) -> SigningPartySignup {
+    pub fn add_party(&mut self, party_number: u16) -> Result<SigningPartySignup, String> {
+        if self.member_info.len() == u16::MAX as usize {
+            return Err("The number of parties has exceeded the boundary!".into())
+        }
         let party_signup = SigningRoom::new_sign_party(
             u16::try_from(self.member_info.len()).unwrap() + 1,
         );
@@ -63,7 +66,7 @@ impl SigningRoom {
             last_ping: SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()
         });
 
-        party_signup.clone()
+        Ok(party_signup.clone())
     }
 
     pub fn replace_party(&mut self, party_number: u16) -> SigningPartySignup {

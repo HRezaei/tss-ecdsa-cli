@@ -231,7 +231,10 @@ fn signup_sign(
             signing_room.replace_party(party_number)
         }
         else {
-            signing_room.add_party(party_number)
+            match signing_room.add_party(party_number) {
+                Ok(party_signup) => party_signup,
+                Err(message) => return Json(Err(ManagerError{error: message.to_string()}))
+            }
         }
     };
 
