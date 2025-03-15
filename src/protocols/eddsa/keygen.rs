@@ -8,7 +8,7 @@ use curv::elliptic::curves::{Ed25519};
 use multi_party_eddsa::protocols::thresholdsig::{KeyGenBroadcastMessage1, KeyGenDecommitMessage1, Keys, Parameters};
 use sha2::Sha512;
 
-use crate::common::{AEAD, aes_decrypt, aes_encrypt, AES_KEY_BYTES_LEN, broadcast, Client, keygen_signup, Params, PartySignup, poll_for_broadcasts, poll_for_p2p, sendp2p};
+use crate::common::{AEAD, aes_decrypt, aes_encrypt, AES_KEY_BYTES_LEN, broadcast, Client, keygen_signup, Params, poll_for_broadcasts, poll_for_p2p, sendp2p};
 use crate::protocols::{generate_shared_chain_code, verify_dlog_proofs};
 use crate::eddsa::{CURVE_NAME, FE, GE};
 
@@ -30,9 +30,7 @@ pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) {
         threshold: THRESHOLD.to_string(),
         parties: PARTIES.to_string(),
     };
-    let (party_num_int, uuid) = match keygen_signup(&client, &tn_params, CURVE_NAME).unwrap() {
-        PartySignup { number, uuid } => (number, uuid),
-    };
+    let (party_num_int, uuid) = keygen_signup(&client, &tn_params, CURVE_NAME);
     println!("number: {:?}, uuid: {:?}, curve: {:?}", party_num_int, uuid, CURVE_NAME);
 
     let party_keys = Keys::phase1_create(party_num_int);
@@ -261,5 +259,6 @@ pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) {
     ))
         .unwrap();
 
+    println!("Keys data written to file: {:?}", keys_file_path);
     fs::write(keys_file_path, keygen_json).expect("Unable to save !");
 }
