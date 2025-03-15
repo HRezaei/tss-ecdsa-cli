@@ -12,6 +12,32 @@ use uuid::Uuid;
 use crate::common::{Entry, Index, Key, ManagerError, Params, PartySignup, PartySignupRequestBody, SigningPartySignup};
 use crate::common::signing_room::SigningRoom;
 
+const MANAGER_MAX_PARTIES_VAR: &str = "TSS_MANAGER_MAX_PARTIES";
+const MANAGER_MAX_PARTIES_DEFAULT: u16 = 10;
+
+fn validate_t_n_params(num_parties: u16, threshold: u16) -> Result<bool, String> {
+    let max_allowed_parties = std::env::var(MANAGER_MAX_PARTIES_VAR)
+        .ok()
+        .and_then(|max_n| max_n.parse::<u16>().ok())
+        .unwrap_or(MANAGER_MAX_PARTIES_DEFAULT);
+    if threshold <= 1 {
+        Err(format!("Invalid threshold (t) is given: {}.", threshold).to_string())
+    }
+    else if num_parties <= threshold {
+        Err(format!("The threshold (t) must be lower than total parties {}, passed: {}",
+                    num_parties, threshold).to_string()
+        )
+    }
+    else if num_parties > max_allowed_parties {
+        Err(format!("Maximum {} parties limit reached. Increase param {} on manager to allow more.",
+                    MANAGER_MAX_PARTIES_DEFAULT, MANAGER_MAX_PARTIES_VAR).to_string()
+        )
+    }
+    else {
+        Ok(true)
+    }
+}
+
 #[rocket::main]
 pub async fn run_manager() -> Result<Rocket<Ignite>, rocket::Error> {
     //     let mut my_config = Config::development();
@@ -95,8 +121,13 @@ fn set(db_mtx: &State<RwLock<TtlHashMap<Key, String>>>, request: Json<Entry>) ->
 fn signup_keygen(
     db_mtx: &State<RwLock<TtlHashMap<Key, String>>>,
     request: Json<(Params, String)>,
-) -> Json<Result<PartySignup, ()>> {
+) -> Json<Result<PartySignup, ManagerError>> {
     let parties = request.0.0.parties.parse::<u16>().unwrap();
+    let threshold = request.0.0.threshold.parse::<u16>().unwrap();
+    match validate_t_n_params(parties, threshold) {
+        Ok(_valid) => {},
+        Err(message) => return Json(Err(ManagerError {error: message.to_string()}))
+    }
     let curve = &request.0.1.parse::<String>().unwrap();
     let key = "signup-keygen-".to_string() + curve;
     let mut hm = db_mtx.write().unwrap();
@@ -137,6 +168,11 @@ fn signup_sign(
     let party_uuid = request.party_uuid.clone();
     let new_signup_request = party_uuid.is_empty();
     let party_number = request.party_number;
+    // In signing we don't get the "n" parameter from parties, thus we assume n=t+1 :
+    match validate_t_n_params(threshold+1, threshold) {
+        Ok(_valid) => {},
+        Err(message) => return Json(Err(ManagerError {error: message.to_string()}))
+    }
     let mut key = "signup-sign-".to_owned() + &request.curve_name;
     key.push_str(&room_id);
 

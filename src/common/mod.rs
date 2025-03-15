@@ -4,6 +4,7 @@ pub mod hd_keys;
 pub mod signing_room;
 
 use std::{thread, time, time::Duration};
+use std::process::exit;
 use std::time::Instant;
 
 use aes_gcm::{Aes256Gcm, Nonce};
@@ -15,6 +16,7 @@ use rand::{rngs::OsRng, TryRngCore};
 use sha2::{Sha256, Digest};
 
 pub type Key = String;
+
 
 #[derive(Clone)]
 pub struct Client {
@@ -261,15 +263,24 @@ pub fn poll_for_p2p(
     ans_vec
 }
 
-pub fn keygen_signup(client: &Client, params: &Params, curve_name: &str) -> Result<PartySignup, ()> {
+pub fn keygen_signup(client: &Client, params: &Params, curve_name: &str) -> (u16, String) {
     let res_body = postb(&client, "signupkeygen", (params, curve_name)).unwrap();
-    serde_json::from_str(&res_body).unwrap()
+    let result = serde_json::from_str(&res_body).unwrap();
+    match result {
+        Ok(PartySignup { number, uuid }) => {
+            if number < 1 || number > params.parties.parse::<u16>().unwrap() {
+                println!("Manager returned an invalid party ID: {}", number);
+                exit(1);
+            }
+            (number, uuid)
+        },
+        Err(ManagerError{error}) => {
+            println!("Manager returned error: {}", error);
+            exit(1);
+        },
+    }
 }
 
-/*pub fn signup(path:&str, client: &Client, params: &Params, curve_name: &str) -> Result<PartySignup, ()> {
-    let res_body = postb(&client, path, (params, curve_name)).unwrap();
-    serde_json::from_str(&res_body).unwrap()
-}*/
 
 pub fn signup(path: &str, client: &Client, params: &Params, room_id: String, party_id: u16, curve_name: &str) -> Result<(PartySignup, u16), ()> {
     let mut request_body = PartySignupRequestBody{
