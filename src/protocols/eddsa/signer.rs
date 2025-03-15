@@ -1,6 +1,7 @@
 use std::{fs, time};
 use std::time::Duration;
 use std::collections::HashMap;
+use std::process::exit;
 use curv::arithmetic::{Converter};
 use curv::BigInt;
 use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
@@ -293,7 +294,13 @@ pub fn eph_keygen_t_n_parties(
             // prepare encrypted ss for party i:
             let key_i = enc_keys.get(&parties[(i-1) as usize]).unwrap();
             let plaintext = BigInt::to_bytes(&secret_shares[k].to_bigint());
-            let aead_pack_i = aes_encrypt(key_i, &plaintext);
+            let aead_pack_i = match aes_encrypt(key_i, &plaintext){
+                Ok(aead_pack) => {aead_pack}
+                Err(message) => {
+                    eprintln!("Encryption error: {}", message);
+                    exit(1);
+                }
+            };
             assert!(sendp2p(
                 &client,
                 party_num_int,
