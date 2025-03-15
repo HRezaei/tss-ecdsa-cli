@@ -1,4 +1,5 @@
 use std::{fs, time};
+use std::process::exit;
 use std::string::String;
 use curv::arithmetic::Converter;
 use curv::BigInt;
@@ -130,7 +131,13 @@ pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) {
             // prepare encrypted ss for party i:
             let key_i = &enc_keys[j];
             let plaintext = BigInt::to_bytes(&secret_shares[k].to_bigint());
-            let aead_pack_i = aes_encrypt(key_i, &plaintext);
+            let aead_pack_i = match aes_encrypt(key_i, &plaintext) {
+                Ok(aead_pack) => {aead_pack}
+                Err(message) => {
+                    eprintln!("Encryption error: {}", message);
+                    exit(1);
+                }
+            };
             assert!(sendp2p(
                 &client,
                 party_num_int,

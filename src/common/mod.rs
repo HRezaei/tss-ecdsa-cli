@@ -95,7 +95,10 @@ impl Client {
 }
 
 #[allow(dead_code)]
-pub fn aes_encrypt(key: &[u8], plaintext: &[u8]) -> AEAD {
+pub fn aes_encrypt(key: &[u8], plaintext: &[u8]) -> Result<AEAD, String> {
+    if key.len() != AES_KEY_BYTES_LEN {
+        return Err(String::from("Key length is invalid"));
+    }
     let aes_key = aes_gcm::Key::from_slice(key);
     let cipher = Aes256Gcm::new(aes_key);
 
@@ -107,10 +110,10 @@ pub fn aes_encrypt(key: &[u8], plaintext: &[u8]) -> AEAD {
         .encrypt(nonce, plaintext)
         .expect("encryption failure!");
 
-    AEAD {
+    Ok(AEAD {
         ciphertext: ciphertext,
         tag: nonce.to_vec(),
-    }
+    })
 }
 
 #[allow(dead_code)]
