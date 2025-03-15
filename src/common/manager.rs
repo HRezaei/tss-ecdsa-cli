@@ -302,7 +302,10 @@ fn signup_sign(
             }
         }
         else {
-            Ok(signing_room.add_party(party_number))
+            match signing_room.add_party(party_number) {
+                Ok(party_signup) => Ok(party_signup),
+                Err(message) => return Json(Err(ManagerError{error: message.to_string()}))
+            }
         }
     };
 
