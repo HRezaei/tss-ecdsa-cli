@@ -5,7 +5,7 @@ use curv::arithmetic::{Converter};
 use curv::BigInt;
 use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
 use curv::elliptic::curves::{Ed25519, Point, Scalar};
-use multi_party_eddsa::protocols::{Signature, thresholdsig};
+use multi_party_eddsa::protocols::{Signature, thresholdsig, ExpandedKeyPair, ExpandedPrivateKey};
 use multi_party_eddsa::protocols::thresholdsig::{
     EphemeralKey, EphemeralSharedKeys, KeyGenBroadcastMessage1, Keys, LocalSig, Parameters,
     SharedKeys
@@ -31,7 +31,7 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
 
     let data = fs::read_to_string(key_file_path)
         .expect("Unable to load keys, did you run keygen first? ");
-    let (party_keys, chain_code, mut shared_keys, party_id, vss_scheme_vec, Y): (
+    let (mut party_keys, chain_code, mut shared_keys, party_id, vss_scheme_vec, Y): (
         Keys,
         Scalar<Ed25519>,
         SharedKeys,
@@ -74,6 +74,7 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
 
     if sign_at_path == true {
         shared_keys.y = Y.clone();
+        party_keys = update_party_key(party_keys, f_l_new.clone(), party_num_int);
     }
 
     // round 0: collect signers IDs
@@ -144,7 +145,45 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
     (signature, Y)
 }
 
-fn update_signature(signature: &mut Signature, public_key: &Point<Ed25519>, message: &[u8], f_l_new: Scalar<Ed25519>) {
+fn update_party_key(party_keys: Keys, f_l_new: Scalar<Ed25519>, party_num_int: u16) -> Keys {
+    let child_priv_key = party_keys.keypair.expanded_private_key.private_key.clone() + f_l_new.clone();
+    let mut private_key = child_priv_key.to_bytes().to_vec();
+    private_key[0] &= 248;
+    private_key[31] &= 63;
+    private_key[31] |= 64;
+    let child_priv_key = Scalar::from_bytes(&private_key).unwrap();
+
+    if party_num_int == 1 {
+        // update u_i and x_i for leader
+        //private = private.update_private_key(&f_l_new, &f_l_new);
+        Keys {
+            keypair: ExpandedKeyPair {
+                public_key: child_priv_key.clone() * Point::generator(),
+                expanded_private_key: ExpandedPrivateKey {
+                    prefix: party_keys.keypair.expanded_private_key.prefix + f_l_new.clone(),
+                    private_key: child_priv_key,
+                },
+            },
+            party_index: party_keys.party_index,
+        }
+    } else {
+        // only update x_i for non-leaders
+        //private = private.update_private_key(&crate::protocols::ecdsa::FE::zero(), &f_l_new);
+        Keys {
+            keypair: ExpandedKeyPair {
+                public_key: child_priv_key.clone() * Point::generator(),
+                expanded_private_key: ExpandedPrivateKey {
+                    prefix: party_keys.keypair.expanded_private_key.prefix,
+                    private_key: child_priv_key,
+                },
+            },
+            party_index: party_keys.party_index,
+        }
+    }
+}
+
+fn update_signature(signature: &mut Signature, public_key: &Point<Ed25519>, message: &[u8],
+                    f_l_new: Scalar<Ed25519>) {
     let mut k = Sha512::new()
         .chain(&*signature.R.to_bytes(true))
         .chain(&*public_key.to_bytes(true))
