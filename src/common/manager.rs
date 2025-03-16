@@ -149,7 +149,7 @@ fn signup_sign(
 
     if signing_room.last_stage != "signup" {
         if signing_room.has_member(party_number, party_uuid.clone()) {
-            return Json(Ok(signing_room.get_signup_info(party_number)));
+            return Json(signing_room.get_signup_info(party_number));
         }
 
         if signing_room.are_all_members_inactive() {
@@ -174,7 +174,7 @@ fn signup_sign(
         }));
     }
 
-    let party_signup = {
+    let party_signup_result = {
         if !new_signup_request {
             if !signing_room.has_member(party_number, party_uuid) {
                 return Json(Err(ManagerError{
@@ -186,19 +186,30 @@ fn signup_sign(
             //}
             //Else is handled in the next block
         } else if signing_room.member_info.contains_key(&party_number) {
-            if signing_room.is_member_active(party_number) {
-                return Json(Err(ManagerError{
-                    error: "Received a re-signup request for an active party. Request ignored".to_string()
-                }));
+            match signing_room.is_member_active(party_number) {
+                Ok(is_active) => {
+                    if is_active {
+                        return Json(Err(ManagerError{
+                            error: "Received a re-signup request for an active party. Request ignored".to_string()
+                        }));
+                    }
+                    println!("Received a re-signup request for a timed-out party {:?}, thus UUID is renewed", party_number);
+                    signing_room.replace_party(party_number)
+                }
+                Err(error) => {Err(error)}
             }
-            println!("Received a re-signup request for a timed-out party {:?}, thus UUID is renewed", party_number);
-            signing_room.replace_party(party_number)
         }
         else {
-            signing_room.add_party(party_number)
+            Ok(signing_room.add_party(party_number))
         }
     };
 
-    hm.insert(key.clone(), serde_json::to_string(&signing_room).unwrap());
-    Json(Ok(party_signup))
+    match party_signup_result {
+        Ok(party_signup) => {
+            hm.insert(key.clone(), serde_json::to_string(&signing_room).unwrap());
+            Json(Ok(party_signup))
+        },
+        Err(error) => Json(Err(error))
+    }
+
 }
