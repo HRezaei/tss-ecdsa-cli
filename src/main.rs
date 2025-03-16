@@ -20,6 +20,7 @@ use crate::common::MAX_FIRST_PRIMES;
 
 mod common;
 mod protocols;
+#[cfg(test)]
 mod test;
 
 fn main() {
