@@ -5,7 +5,7 @@ use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use crate::common::{SigningPartyInfo, SigningPartySignup};
+use crate::common::{ManagerError, SigningPartyInfo, SigningPartySignup};
 
 pub const SIGNUP_TIMEOUT_ENV: &str = "TSS_MANAGER_SIGNUP_TIMEOUT";
 pub const SIGNUP_TIMEOUT_DEFAULT: &str = "2";
@@ -66,16 +66,20 @@ impl SigningRoom {
         party_signup.clone()
     }
 
-    pub fn replace_party(&mut self, party_number: u16) -> SigningPartySignup {
-        let old_party = self.member_info.get(&party_number).unwrap();
-        let party_signup= SigningRoom::new_sign_party(old_party.party_order);
-        *self.member_info.get_mut(&party_number).unwrap() = SigningPartyInfo{
-            party_id: party_signup.party_uuid.clone(),
-            party_order: party_signup.party_order,
-            last_ping: SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()
-        };
+    pub fn replace_party(&mut self, party_number: u16) -> Result<SigningPartySignup, ManagerError> {
+        match self.member_info.get(&party_number) {
+            None => {Err(ManagerError{error:"Party not found!".into()})}
+            Some(old_party) => {
+                let party_signup= SigningRoom::new_sign_party(old_party.party_order);
+                self.member_info.insert(party_number, SigningPartyInfo{
+                    party_id: party_signup.party_uuid.clone(),
+                    party_order: party_signup.party_order,
+                    last_ping: SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()
+                });
 
-        party_signup.clone()
+                Ok(party_signup.clone())
+            }
+        }
     }
 
     pub fn are_all_members_active(&self) -> bool {
@@ -90,19 +94,24 @@ impl SigningRoom {
         )
     }
 
-    pub fn is_member_active(&self, party_number: u16) -> bool {
-        let party_data = self.member_info.get(&party_number).unwrap();
-
-        !SigningRoom::is_timeout(party_data)
+    pub fn is_member_active(&self, party_number: u16) -> Result<bool, ManagerError> {
+        match self.member_info.get(&party_number) {
+            None => {Err(ManagerError{error:"Party not found!".into()})},
+            Some(party_data) => {Ok(!SigningRoom::is_timeout(party_data))}
+        }
     }
 
-    pub fn update_ping(&mut self, party_number: u16) -> SigningPartySignup {
-        let party_data = self.member_info.get_mut(&party_number).unwrap();
-        party_data.last_ping = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
-        if self.is_full() && self.active_members().len() >= usize::from(self.room_size) {
-            self.close_signup_window();
+    pub fn update_ping(&mut self, party_number: u16) -> Result<SigningPartySignup, ManagerError> {
+        match self.member_info.get_mut(&party_number) {
+            None => {Err(ManagerError{error:"Party not found!".into()})},
+            Some(party_data) => {
+                party_data.last_ping = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+                if self.is_full() && self.active_members().len() >= usize::from(self.room_size) {
+                    self.close_signup_window();
+                }
+                self.get_signup_info(party_number)
+            }
         }
-        self.get_signup_info(party_number)
     }
 
     fn close_signup_window(&mut self){
@@ -113,8 +122,12 @@ impl SigningRoom {
     }
 
     pub fn has_member(&self, party_number: u16, party_uuid: String) -> bool {
-        self.member_info.contains_key(&party_number) &&
-            self.member_info.get(&party_number).unwrap().party_id == party_uuid
+        match self.member_info.get(&party_number) {
+            None => {false},
+            Some(party_data) => {
+                party_data.party_id == party_uuid
+            }
+        }
     }
 
     fn active_members(&self) -> HashMap<u16, SigningPartyInfo> {
@@ -122,19 +135,24 @@ impl SigningRoom {
             .filter(|(_key, x)| !SigningRoom::is_timeout(x)).collect()
     }
 
-    pub fn get_signup_info(&self, party_number: u16) -> SigningPartySignup {
-        let member_info = self.member_info.get(&party_number).unwrap();
-        let room_uuid = if self.last_stage == "signup" {
-            "".to_string()
+    pub fn get_signup_info(&self, party_number: u16) -> Result<SigningPartySignup, ManagerError> {
+        match self.member_info.get(&party_number) {
+            None => {Err(ManagerError{error:"Party not found!".into()})},
+            Some(member_info) => {
+                let room_uuid = if self.last_stage == "signup" {
+                    "".to_string()
+                }
+                else {
+                    self.room_uuid.clone()
+                };
+                Ok(SigningPartySignup{
+                    party_order: member_info.party_order,
+                    party_uuid: member_info.party_id.clone(),
+                    room_uuid,
+                    total_joined: u16::try_from(self.active_members().len()).unwrap()
+                })
+            }
         }
-        else {
-            self.room_uuid.clone()
-        };
-        SigningPartySignup{
-            party_order: member_info.party_order,
-            party_uuid: member_info.party_id.clone(),
-            room_uuid,
-            total_joined: u16::try_from(self.active_members().len()).unwrap()
-        }
+
     }
 }
