@@ -46,19 +46,15 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
         true => (Y, FE::zero()),
         false => {
             let chain_code = chain_code * GE::generator();
-            let (y_sum_child, f_l_new) = hd_keys::get_hd_key(
+            let (y_sum_child, mut f_l_new) = hd_keys::get_hd_key(
                 &Y,
                 path,
                 chain_code
             );
 
-            let safe_public_key_child =
-                update_hd_derived_public_key(
-                    y_sum_child
-                )
-                ;
+            f_l_new = key_clamp_f_l_new(f_l_new);
 
-            (safe_public_key_child, f_l_new)
+            (y_sum_child, f_l_new)
         }
     };
 
@@ -147,11 +143,6 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
 
 fn update_party_key(party_keys: Keys, f_l_new: Scalar<Ed25519>, party_num_int: u16) -> Keys {
     let child_priv_key = party_keys.keypair.expanded_private_key.private_key.clone() + f_l_new.clone();
-    let mut private_key = child_priv_key.to_bytes().to_vec();
-    private_key[0] &= 248;
-    private_key[31] &= 63;
-    private_key[31] |= 64;
-    let child_priv_key = Scalar::from_bytes(&private_key).unwrap();
 
     if party_num_int == 1 {
         // update u_i and x_i for leader
@@ -196,13 +187,12 @@ fn update_signature(signature: &mut Signature, public_key: &Point<Ed25519>, mess
     signature.s = signature.s.clone() + f_l_new * add_to_sigma;
 }
 
-pub fn update_hd_derived_public_key(public_key: GE) -> GE {
-    let eight = Scalar::<Ed25519>::from(8);
-    let eight_inverse = eight.invert().unwrap();
-    //Based on a recommendation by Elichai Turkel and this comment:
-    // https://github.com/WebOfTrustInfo/rwot1-sf/issues/13#issuecomment-169858664,
-    // we decided to do this:
-    (public_key * eight_inverse) * eight
+pub fn key_clamp_f_l_new(f_l_new: Scalar<Ed25519>) -> Scalar<Ed25519> {
+    let mut f_l_new = f_l_new.to_bytes().to_vec();
+    f_l_new[0] &= 248;
+    f_l_new[31] &= 63;
+    f_l_new[31] |= 64;
+    Scalar::from_bytes(&f_l_new).unwrap()
 }
 
 pub fn eph_keygen_t_n_parties(

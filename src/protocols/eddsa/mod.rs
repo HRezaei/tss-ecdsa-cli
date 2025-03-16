@@ -6,7 +6,7 @@ use curv::elliptic::curves::{Ed25519, Scalar, Point};
 use multi_party_eddsa::protocols::thresholdsig::{Keys, SharedKeys};
 use serde_json::{json, Value};
 use crate::common::Params;
-use crate::eddsa::signer::update_hd_derived_public_key;
+use crate::eddsa::signer::key_clamp_f_l_new;
 use crate::hd_keys;
 
 pub mod keygen;
@@ -65,9 +65,9 @@ pub fn run_pubkey(keys_file_path:&str, path:&str) -> Value {
             let chain_code= chain_code * GE::generator();
             let (y_sum_child, f_l_new) = hd_keys::get_hd_key(&y_sum, path, chain_code);
 
-            let safe_public_key_child = update_hd_derived_public_key(y_sum_child);
+            let clamped_f_l_new = key_clamp_f_l_new(f_l_new);
 
-            (f_l_new, safe_public_key_child)
+            (clamped_f_l_new, y_sum_child)
         }
     };
 
