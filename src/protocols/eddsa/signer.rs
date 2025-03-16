@@ -83,7 +83,7 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
     let parties_index_vec = exchange_data(
         client.clone(),
         party_num_int,
-        THRESHOLD.clone()+1,
+        total_parties,
         uuid.clone(),
         "round0",
         delay,
@@ -412,6 +412,6 @@ pub fn exchange_data<T>(client:Client, party_num:u16, n:u16, uuid:String, round:
         }
     }
 
-    return answers;
+    answers
 }
 
