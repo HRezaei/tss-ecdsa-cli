@@ -14,10 +14,7 @@ use crate::common::{hd_keys, validate_hex_string, Params};
 use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
 use paillier::EncryptionKey;
 
-use curv::{
-    arithmetic::traits::Converter,
-    BigInt,
-};
+use curv::{arithmetic::traits::Converter};
 use curv::elliptic::curves::{Point, Scalar, Secp256k1};
 use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::{
     Keys, SharedKeys
@@ -28,42 +25,6 @@ use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::{
 pub static CURVE_NAME: &str = "ECDSA";
 pub type FE = Scalar<Secp256k1>;
 pub type GE = Point<Secp256k1>;
-
-#[allow(dead_code)]
-pub fn check_sig(
-    r: &Scalar<Secp256k1>,
-    s: &Scalar<Secp256k1>,
-    msg: &BigInt,
-    pk: &Point<Secp256k1>,
-) {
-    use libsecp256k1::{verify, Message, PublicKey, PublicKeyFormat, Signature};
-
-    let raw_msg = BigInt::to_bytes(msg);
-    let mut msg: Vec<u8> = Vec::new(); // padding
-    msg.extend(vec![0u8; 32 - raw_msg.len()]);
-    msg.extend(raw_msg.iter());
-
-    let msg = Message::parse_slice(msg.as_slice()).unwrap();
-    let mut raw_pk = pk.to_bytes(false).to_vec();
-    if raw_pk.len() == 64 {
-        raw_pk.insert(0, 4u8);
-    }
-    let pk = PublicKey::parse_slice(&raw_pk, Some(PublicKeyFormat::Full)).unwrap();
-
-    let mut compact: Vec<u8> = Vec::new();
-    let bytes_r = &r.to_bytes().to_vec();
-    compact.extend(vec![0u8; 32 - bytes_r.len()]);
-    compact.extend(bytes_r.iter());
-
-    let bytes_s = &s.to_bytes().to_vec();
-    compact.extend(vec![0u8; 32 - bytes_s.len()]);
-    compact.extend(bytes_s.iter());
-
-    let secp_sig = Signature::parse_standard_slice(compact.as_slice()).unwrap();
-
-    let is_correct = verify(&msg, &secp_sig, &pk);
-    assert!(is_correct);
-}
 
 
 pub fn run_pubkey_or_sign(

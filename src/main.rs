@@ -19,6 +19,7 @@ use protocols::eddsa;
 
 mod common;
 mod protocols;
+#[cfg(test)]
 mod test;
 
 fn main() {
