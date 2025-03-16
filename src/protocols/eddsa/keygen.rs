@@ -168,12 +168,20 @@ pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) {
         } else {
             let aead_pack: AEAD = serde_json::from_str(&round3_ans_vec[j]).unwrap();
             let key_i = &enc_keys[j];
-            let out = aes_decrypt(key_i, aead_pack);
-            let out_bn = BigInt::from_bytes(&out[..]);
-            let out_fe = FE::from(&out_bn);
-            party_shares.push(out_fe);
+            match aes_decrypt(key_i, aead_pack) {
+                Ok(out) => {
+                    let out_bn = BigInt::from_bytes(&out[..]);
+                    let out_fe = FE::from(&out_bn);
+                    party_shares.push(out_fe);
 
-            j += 1;
+                    j += 1;
+                }
+                Err(error) => {
+                    eprintln!("Decryption error: {}", error);
+                    exit(1);
+                }
+            }
+
         }
     }
 

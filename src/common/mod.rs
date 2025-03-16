@@ -151,13 +151,16 @@ pub fn aes_encrypt(key: &[u8], plaintext: &[u8]) -> Result<AEAD, String> {
 }
 
 #[allow(dead_code)]
-pub fn aes_decrypt(key: &[u8], aead_pack: AEAD) -> Vec<u8> {
+pub fn aes_decrypt(key: &[u8], aead_pack: AEAD) -> Result<Vec<u8>, String> {
+    if key.len() != AES_KEY_BYTES_LEN {
+        return Err(String::from("Key length is invalid"));
+    }
     let aes_key = aes_gcm::Key::from_slice(key);
     let nonce = Nonce::from_slice(&aead_pack.tag);
     let gcm = Aes256Gcm::new(aes_key);
 
     let out = gcm.decrypt(nonce, aead_pack.ciphertext.as_slice());
-    out.unwrap()
+    Ok(out.unwrap())
 }
 
 fn generate_jwt() -> String {

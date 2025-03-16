@@ -331,11 +331,19 @@ pub fn eph_keygen_t_n_parties(
         } else {
             let aead_pack: AEAD = serde_json::from_str(&round3_ans_vec[j]).unwrap();
             let key_i = &enc_keys.get(&parties[(i-1) as usize]).unwrap();
-            let out = aes_decrypt(key_i, aead_pack);
-            let out_bn = BigInt::from_bytes(&out[..]);
-            let out_fe = FE::from(&out_bn);
-            party_shares.push(out_fe);
-            j += 1;
+            match aes_decrypt(key_i, aead_pack) {
+                Ok(out) => {
+                    let out_bn = BigInt::from_bytes(&out[..]);
+                    let out_fe = FE::from(&out_bn);
+                    party_shares.push(out_fe);
+                    j += 1;
+                }
+                Err(error) => {
+                    eprintln!("Decryption error: {}", error);
+                    exit(1);
+                }
+            }
+
         }
     }
     //////////////////////////////////////////////////////////////////////////////
