@@ -1,4 +1,3 @@
-use std::{fs, time};
 use std::time::Duration;
 use std::collections::HashMap;
 use std::process::exit;
@@ -8,13 +7,12 @@ use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
 use curv::elliptic::curves::{Ed25519, Point, Scalar};
 use multi_party_eddsa::protocols::{Signature, thresholdsig, ExpandedKeyPair, ExpandedPrivateKey};
 use multi_party_eddsa::protocols::thresholdsig::{
-    EphemeralKey, EphemeralSharedKeys, KeyGenBroadcastMessage1, Keys, LocalSig, Parameters,
-    SharedKeys
+    EphemeralKey, EphemeralSharedKeys, KeyGenBroadcastMessage1, Keys, LocalSig, Parameters
 };
 use sha2::{Sha512, Digest};
 use crate::common::{AEAD, aes_decrypt, aes_encrypt, AES_KEY_BYTES_LEN, broadcast, Client, hd_keys, Params, PartySignup, poll_for_broadcasts, poll_for_p2p, sendp2p, sha256_digest, signup};
 use crate::eddsa::{CURVE_NAME, FE, GE};
-
+use crate::protocols::eddsa::EdDSAParameters;
 
 //TODO Find a better approach to import and reuse run_signer() from multi-party-eddsa repo
 pub fn run_signer(manager_address:String, key_file_path: String, params: Params, message_str:String, path: &str)
@@ -28,18 +26,22 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
     let message = &message[..];
     let client = Client::new(manager_address);
     // delay:
-    let delay = time::Duration::from_millis(25);
+    let delay = Duration::from_millis(25);
 
-    let data = fs::read_to_string(key_file_path)
-        .expect("Unable to load keys, did you run keygen first? ");
-    let (mut party_keys, chain_code, mut shared_keys, party_id, vss_scheme_vec, Y): (
-        Keys,
-        Scalar<Ed25519>,
-        SharedKeys,
-        u16,
-        Vec<VerifiableSS<Ed25519>>,
-        GE,
-    ) = serde_json::from_str(&data).unwrap();
+    let EdDSAParameters {
+        party_key: mut party_keys,
+        chain_code,
+        mut shared_keys,
+        party_id,
+        vss_scheme_vec,
+        master_public_key: Y
+    } = match EdDSAParameters::read_from_file(key_file_path) {
+        Ok(x) => x,
+        Err(error) => {
+            eprintln!("Error loading file: {}", error);
+            exit(1);
+        }
+    };
 
     let sign_at_path = !path.is_empty();
     // Get root pub key or HD pub key at specified path

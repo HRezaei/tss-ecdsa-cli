@@ -11,7 +11,7 @@ extern crate serde_json;
 
 use clap::{App, AppSettings, Arg, SubCommand};
 
-use common::{manager, hd_keys, check_key_file};
+use common::{manager, hd_keys};
 
 use protocols::ecdsa;
 use protocols::eddsa;
@@ -194,7 +194,7 @@ fn main() {
             let source_path = sub_matches.value_of("input_file").unwrap_or("").to_string();
             let limit = sub_matches.value_of("max_first").unwrap_or(MAX_FIRST_PRIMES.to_string().as_str()).parse::<usize>().unwrap();
 
-            let result: bool = check_key_file(source_path.as_str(), limit);
+            let result: bool = ecdsa::check_key_file(source_path.as_str(), limit);
             if result {
                 println!("Key file check failed.");
             }

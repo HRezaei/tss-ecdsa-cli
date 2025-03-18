@@ -3,26 +3,22 @@ pub mod hd_keys;
 
 pub mod signing_room;
 
-use std::{env, fs, thread, time};
+use std::{env, thread, time};
 use std::time::{Instant, SystemTime, Duration};
 
 use aes_gcm::{Aes256Gcm, Nonce};
 use aes_gcm::aead::{Aead, NewAead};
 use curv::arithmetic::{Zero};
 use curv::BigInt;
-use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
-use curv::elliptic::curves::{Point, Scalar, Secp256k1};
-use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::{Keys, SharedKeys};
-use paillier::EncryptionKey;
 use std::process::exit;
-
+use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
+use curv::elliptic::curves::Curve;
 use jsonwebtoken::{encode, EncodingKey, Header};
 use reqwest::blocking::Client as RequestClient;
 use serde::{Deserialize, Serialize};
 use rand::{rngs::OsRng, TryRngCore};
 use reqwest::header::{HeaderMap, AUTHORIZATION};
 use sha2::{Sha256, Digest};
-
 
 pub type Key = String;
 
@@ -126,6 +122,21 @@ struct Claims {
 
 pub fn validate_hex_string(message: &str) -> bool {
     !message.is_empty() && message.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+pub fn validate_vss_scheme_vector<E: Curve>(vss_scheme_vec: Vec<VerifiableSS<E>>) -> Result<bool, String> {
+    for (i, inner_vec) in vss_scheme_vec.iter().enumerate() {
+        if inner_vec.commitments.is_empty() {
+            return Err(format!("vss_scheme_vec[{}] is an empty vector", i));
+        }
+        for (j, ge) in inner_vec.commitments.iter().enumerate() {
+            if ge.is_zero() {
+                return Err(format!("vss_scheme_vec[{}][{}] contains an invalid GE element", i, j));
+            }
+        }
+    }
+
+    Ok(true)
 }
 
 #[allow(dead_code)]
@@ -475,36 +486,6 @@ pub(crate) fn generate_primes(limit: usize) -> Vec<usize> {
     use slow_primes;
 
     slow_primes::Primes::sieve(limit).primes().into_iter().collect()
-}
-
-pub(crate) fn check_key_file(keysfile_path:&str, limit: usize) -> bool {
-    // Read data from keys file
-    let data = fs::read_to_string(keysfile_path).expect(
-        format!("Unable to load keys file at location: {}", keysfile_path).as_str(),
-    );
-
-    let (_party_keys, _chain_code, _shared_keys, _party_id, _vss_scheme_vec, paillier_key_vector, _y_sum): (
-        Keys,
-        Scalar<Secp256k1>,
-        SharedKeys,
-        u16,
-        Vec<VerifiableSS<Secp256k1>>,
-        Vec<EncryptionKey>,
-        Point<Secp256k1>,
-    ) = serde_json::from_str(&data).unwrap();
-
-    println!("MAX_FIRST_PRIMES is set to: {:?}", MAX_FIRST_PRIMES);
-
-
-    let mut failed = false;
-    println!("Checking paillier_key_vector[..].n");
-    for paillier_key in paillier_key_vector.iter() {
-        if is_divisible_by_first_n_primes(paillier_key.n.clone(), limit) {
-                failed = true;
-        };
-    }
-
-    failed
 }
 
 pub(crate) fn is_divisible_by_first_n_primes(given_number: BigInt, limit_for_check: usize) -> bool {
