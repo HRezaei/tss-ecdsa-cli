@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::env;
+use std::process::exit;
 use std::sync::RwLock;
 use std::time::Duration;
 use jsonwebtoken::{decode, Algorithm, DecodingKey, TokenData, Validation, decode_header};
@@ -8,7 +9,6 @@ use rocket::http::Status;
 use rocket::outcome::Outcome;
 use rocket::request::FromRequest;
 use rocket::serde::json::Json;
-use serde_json::json;
 use jsonwebtoken::errors::{ErrorKind, Result as JwtResult};
 
 use ttlhashmap::TtlHashMap;
@@ -18,6 +18,8 @@ use uuid::Uuid;
 use crate::common::{error_message, Claims, Entry, Index, Key, ManagerError, Params, PartySignup, PartySignupRequestBody, SigningPartySignup};
 use crate::common::signing_room::SigningRoom;
 
+const TSS_CLI_MANAGER_TTL_VAR: &str = "TSS_CLI_MANAGER_TTL";
+const TSS_CLI_MANAGER_TTL_DEFAULT: &str = "300";
 const MANAGER_MAX_PARTIES_VAR: &str = "TSS_MANAGER_MAX_PARTIES";
 const MANAGER_MAX_PARTIES_DEFAULT: u16 = 10;
 const HTTP_AUTH_KEY_PAIRS_VAR: &str = "TSS_MANAGER_HTTP_AUTH_KEY_PAIRS";
@@ -60,21 +62,27 @@ impl<'r> FromRequest<'r> for ApiKeyJwt {
 // Function to validate the JWT
 fn validate_jwt(token: &str, user_secrets: &HashMap<String, String>) -> JwtResult<TokenData<Claims>> { //JwtResult<Claims>
     // Step 1: Decode the JWT to extract the claims
-    let decoded_token = decode_header(token);
-
-    match decoded_token {
+    match decode_header(token) {
         Ok(token_data) => {
             // Step 2: Get the API key from the decoded claims (kid)
-            let api_key = token_data.kid.unwrap();
+            match token_data.kid {
+                Some(api_key) => {
+                    // Step 3: Look up the secret key for that user (given api_key)
+                    if let Some(user_secret) = user_secrets.get(&api_key) {
+                        // Step 4: Validate the JWT using the user's secret key
+                        let decoding_key = DecodingKey::from_secret(user_secret.as_bytes());
+                        let validation = Validation::new(Algorithm::HS256);
+                        decode::<Claims>(token, &decoding_key, &validation)
+                    } else {
+                        Err(jsonwebtoken::errors::Error::from(ErrorKind::InvalidToken))
+                    }
+                }
+                None => {
+                    Err(jsonwebtoken::errors::Error::from(
+                        ErrorKind::MissingRequiredClaim("Api key is missing".to_string())
+                    ))
+                }
 
-            // Step 3: Look up the secret key for that user (given api_key)
-            if let Some(user_secret) = user_secrets.get(&api_key) {
-                // Step 4: Validate the JWT using the user's secret key
-                let decoding_key = DecodingKey::from_secret(user_secret.as_bytes());
-                let validation = Validation::new(Algorithm::HS256);
-                decode::<Claims>(token, &decoding_key, &validation)
-            } else {
-                Err(jsonwebtoken::errors::Error::from(ErrorKind::InvalidToken))
             }
         }
         Err(err) => {
@@ -129,19 +137,28 @@ fn validate_t_n_params(num_parties: u16, threshold: u16) -> Result<bool, String>
 pub async fn run_manager() -> Result<Rocket<Ignite>, rocket::Error> {
     //     let mut my_config = Config::development();
     //     my_config.set_port(18001);
-    let ttl = std::env::var("TSS_CLI_MANAGER_TTL")
-        .unwrap_or("300".to_string()).parse::<u64>().unwrap();
-    let db: TtlHashMap<Key, String> = TtlHashMap::new(Duration::from_secs(ttl));
-    let db_mtx = RwLock::new(db);
+    let ttl_result = env::var(TSS_CLI_MANAGER_TTL_VAR)
+        .unwrap_or(TSS_CLI_MANAGER_TTL_DEFAULT.to_string()).parse::<u64>();
+    match ttl_result {
+        Ok(ttl) => {
+            let db: TtlHashMap<Key, String> = TtlHashMap::new(Duration::from_secs(ttl));
+            let db_mtx = RwLock::new(db);
 
-    let user_secret_keys: HashMap<String, String> = parse_user_secrets_from_env();
+            let user_secret_keys: HashMap<String, String> = parse_user_secrets_from_env();
 
-    rocket::build()
-        .mount("/", routes![get, set, signup_keygen, signup_sign])
-        .manage(db_mtx)
-        .manage(user_secret_keys)
-        .launch()
-        .await
+            rocket::build()
+                .mount("/", routes![get, set, signup_keygen, signup_sign])
+                .manage(db_mtx)
+                .manage(user_secret_keys)
+                .launch()
+                .await
+        }
+        Err(error) => {
+            eprintln!("Error in parsing env var: {}, {}", TSS_CLI_MANAGER_TTL_VAR, error);
+            exit(1);
+        }
+    }
+
 }
 
 #[post("/get", format = "json", data = "<request>")]
@@ -151,34 +168,48 @@ fn get(
     _jwt_guard: ApiKeyJwt
 ) -> Json<Result<Entry, ManagerError>> {
     let index: Index = request.0;
-    let mut hm = db_mtx.write().unwrap();
-    match hm.get(&index.key) {
-        Some(v) => {
-            let entry = Entry {
-                key: index.key,
-                value: v.clone().to_string(),
-            };
-            Json(Ok(entry))
+    match db_mtx.write() {
+        Ok(mut hm) => {
+            match hm.get(&index.key) {
+                Some(v) => {
+                    let entry = Entry {
+                        key: index.key,
+                        value: v.clone().to_string(),
+                    };
+                    Json(Ok(entry))
+                }
+                None => {
+                    Json(Err(ManagerError{
+                        error: error_message("Invalid request!",
+                                             format!("Key not found: {}", index.key.as_str()).as_str()
+                        )
+                    }))
+                },
+            }
         }
-        None => {
-            Json(Err(ManagerError{
-                error: error_message("Invalid request",
-                                     format!("Key not found: {}", index.key.as_str()).as_str()
-                )
-            }))
-        },
+        Err(error) => {
+            Json(Err(ManagerError{error: error_message("Could not acquire lock!", &error.to_string())}))
+        }
     }
+
 }
 
 #[post("/set", format = "json", data = "<request>")]
 fn set(db_mtx: &State<RwLock<TtlHashMap<Key, String>>>,
        request: Json<Entry>,
        _jwt_guard: ApiKeyJwt
-) -> Json<Result<(), ()>> {
+) -> Json<Result<(), ManagerError>> {
     let entry: Entry = request.0;
-    let mut hm = db_mtx.write().unwrap();
-    hm.insert(entry.key.clone(), entry.value.clone());
-    Json(Ok(()))
+    match db_mtx.write() {
+        Ok(mut hm) => {
+            hm.insert(entry.key.clone(), entry.value.clone());
+            Json(Ok(()))
+        }
+        Err(error) => {
+            Json(Err(ManagerError{error: error_message("Could not acquire lock!", &error.to_string())}))
+        }
+    }
+
 }
 
 #[post("/signupkeygen", format = "json", data = "<request>")]
@@ -187,40 +218,82 @@ fn signup_keygen(
     request: Json<(Params, String)>,
     _jwt_guard: ApiKeyJwt
 ) -> Json<Result<PartySignup, ManagerError>> {
-    let parties = request.0.0.parties.parse::<u16>().unwrap();
-    let threshold = request.0.0.threshold.parse::<u16>().unwrap();
+    let parties = match request.0.0.parties.parse::<u16>() {
+        Ok(parties) => parties,
+        Err(error) => {
+            return Json(Err(ManagerError{
+                error: error_message("Could not parse parties!", &error.to_string())
+            }))
+        }
+    };
+    let threshold = match request.0.0.threshold.parse::<u16>() {
+        Ok(threshold) => {threshold}
+        Err(error) => {
+            return Json(Err(ManagerError{
+                error: error_message("Could not parse parameters!", &error.to_string())
+            }))
+        }
+    };
     match validate_t_n_params(parties, threshold) {
         Ok(_valid) => {},
         Err(message) => return Json(Err(ManagerError {error: message.to_string()}))
     }
-    let curve = &request.0.1.parse::<String>().unwrap();
-    let key = "signup-keygen-".to_string() + curve;
-    let mut hm = db_mtx.write().unwrap();
-
-    let client_signup = match hm.get(&key) {
-        Some(o) => serde_json::from_str(o).unwrap(),
-        None => PartySignup {
-            number: 0,
-            uuid: Uuid::new_v4().to_string(),
-        },
-    };
-
-    let party_signup = {
-        if client_signup.number < parties {
-            PartySignup {
-                number: client_signup.number + 1,
-                uuid: client_signup.uuid,
-            }
-        } else {
-            PartySignup {
-                number: 1,
-                uuid: Uuid::new_v4().to_string(),
-            }
+    let curve = &match request.0.1.parse::<String>() {
+        Ok(curve) => {curve}
+        Err(error) => {
+            return Json(Err(ManagerError{error: error.to_string()}))
         }
     };
+    let key = "signup-keygen-".to_string() + curve;
+    match db_mtx.write() {
+        Ok(mut hm) => {
+            let client_signup = match hm.get(&key) {
+                Some(json_string) => {
+                    match serde_json::from_str(json_string) {
+                        Ok(signup) => signup,
+                        Err(_error) => {
+                            return Json(Err(ManagerError{
+                                error: "Could not json decode the value stored in hash map!".to_string()
+                            }))
+                        }
+                    }
+                },
+                None => PartySignup {
+                    number: 0,
+                    uuid: Uuid::new_v4().to_string(),
+                },
+            };
 
-    hm.insert(key, serde_json::to_string(&party_signup).unwrap());
-    Json(Ok(party_signup))
+            let party_signup = {
+                if client_signup.number < parties {
+                    PartySignup {
+                        number: client_signup.number + 1,
+                        uuid: client_signup.uuid,
+                    }
+                } else {
+                    PartySignup {
+                        number: 1,
+                        uuid: Uuid::new_v4().to_string(),
+                    }
+                }
+            };
+            match serde_json::to_string(&party_signup) {
+                Ok(encoded_party_signup) => {
+                    hm.insert(key, encoded_party_signup);
+                    Json(Ok(party_signup))
+                }
+                Err(_error) => {
+                    Json(Err(ManagerError{
+                        error: "Could not json encode the party signup!".to_string()
+                    }))
+                }
+            }
+
+        }
+        Err(error) => {
+            Json(Err(ManagerError{error: error_message("Could not acquire lock!", &error.to_string())}))
+        }
+    }
 }
 
 #[post("/signupsign", format = "json", data = "<request>")]
@@ -242,10 +315,26 @@ fn signup_sign(
     let mut key = "signup-sign-".to_owned() + &request.curve_name;
     key.push_str(&room_id);
 
-    let mut hm = db_mtx.write().unwrap();
+    let mut hm = match db_mtx.write(){
+        Ok(hm) => hm,
+        Err(error) => {
+            return Json(Err(ManagerError{
+                error: error_message("Could not acquire lock!", &error.to_string())
+            }))
+        }
+    };
 
     let mut signing_room = match hm.get(&key) {
-        Some(o) => serde_json::from_str(o).unwrap(),
+        Some(o) => {
+            match serde_json::from_str(o) {
+                Ok(signing_room) => signing_room,
+                Err(_error) => {
+                    return Json(Err(ManagerError{
+                        error: "Could not decode the signing room!".to_string()
+                    }))
+                }
+            }
+        },
         None => SigningRoom::new(room_id.clone(), threshold+1),
     };
 
@@ -255,12 +344,10 @@ fn signup_sign(
         }
 
         if signing_room.are_all_members_inactive() {
-            let debug = json!({
-                "message": "All parties have been inactive. Renewed the room.",
-                "room_id": room_id,
-                "fragment.index": party_number,
-            });
-            println!("{}", serde_json::to_string_pretty(&debug).unwrap());
+            let debug = format!("message: All parties have been inactive. Renewed the room. \
+                room_id: {}, \
+                fragment.index: {}", room_id, party_number);
+            println!("{}", debug);
             signing_room = SigningRoom::new(room_id, threshold + 1)
         }
         else {
@@ -311,10 +398,14 @@ fn signup_sign(
 
     match party_signup_result {
         Ok(party_signup) => {
-            hm.insert(key.clone(), serde_json::to_string(&signing_room).unwrap());
-            Json(Ok(party_signup))
+            match serde_json::to_string(&signing_room) {
+                Ok(signing_room_json) => {
+                    hm.insert(key.clone(), signing_room_json);
+                    Json(Ok(party_signup))
+                }
+                Err(error) => {Json(Err(ManagerError{error: error.to_string()}))}
+            }
         },
         Err(error) => Json(Err(error))
     }
-
 }

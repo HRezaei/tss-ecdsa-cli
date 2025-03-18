@@ -160,7 +160,10 @@ pub fn aes_decrypt(key: &[u8], aead_pack: AEAD) -> Result<Vec<u8>, String> {
     let gcm = Aes256Gcm::new(aes_key);
 
     let out = gcm.decrypt(nonce, aead_pack.ciphertext.as_slice());
-    Ok(out.unwrap())
+    match out {
+        Ok(out) => Ok(out),
+        Err(error) => Err(error.to_string())
+    }
 }
 
 fn generate_jwt() -> String {
@@ -189,7 +192,13 @@ fn generate_jwt() -> String {
     let encoding_key = EncodingKey::from_secret(secret_key.as_bytes());
 
     // Encode the JWT and return the token
-    encode(&header, &claims, &encoding_key).unwrap()
+    match encode(&header, &claims, &encoding_key) {
+        Ok(encoded_string) => {encoded_string}
+        Err(error) => {
+            eprintln!("Error encoding JWT: {}", error);
+            exit(1);
+        }
+    }
 }
 
 pub fn postb<T>(client: &Client, path: &str, body: T) -> Option<String>
@@ -348,20 +357,34 @@ pub fn poll_for_p2p(
 }
 
 pub fn keygen_signup(client: &Client, params: &Params, curve_name: &str) -> (u16, String) {
-    let res_body = postb(&client, "signupkeygen", (params, curve_name)).unwrap();
-    let result = serde_json::from_str(&res_body).unwrap();
-    match result {
-        Ok(PartySignup { number, uuid }) => {
-            if number < 1 || number > params.parties.parse::<u16>().unwrap() {
-                println!("Manager returned an invalid party ID: {}", number);
-                exit(1);
+    match postb(&client, "signupkeygen", (params, curve_name)) {
+        Some(res_body) => {
+            match serde_json::from_str(&res_body) {
+                Ok(result) => {
+                    match result {
+                        Ok(PartySignup { number, uuid }) => {
+                            if number < 1 || number > params.parties.parse::<u16>().unwrap() {
+                                println!("Manager returned an invalid party ID: {}", number);
+                                exit(1);
+                            }
+                            (number, uuid)
+                        },
+                        Err(ManagerError { error }) => {
+                            println!("Manager returned error: {}", error);
+                            exit(1);
+                        },
+                    }
+                },
+                Err(error) => {
+                    println!("Manager returned error: {}", error);
+                    exit(1);
+                }
             }
-            (number, uuid)
-        },
-        Err(ManagerError{error}) => {
-            println!("Manager returned error: {}", error);
+        }
+        None => {
+            println!("Signup returned no response");
             exit(1);
-        },
+        }
     }
 }
 
@@ -423,7 +446,8 @@ pub fn signup(path: &str, client: &Client, params: &Params, room_id: String, par
             (party_signup, last_total_joined)
         },
         Err(ManagerError{error}) => {
-            panic!("{}", error);
+            eprintln!("Manager returned error: {}", error);
+            exit(1);
         }
     };
 

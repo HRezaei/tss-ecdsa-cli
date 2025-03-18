@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::env;
+use std::process::exit;
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
@@ -46,20 +47,30 @@ impl SigningRoom {
 
     fn is_timeout(party: &SigningPartyInfo) -> bool {
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-        let timeout = u64::from_str(
-            env::var(SIGNUP_TIMEOUT_ENV).unwrap_or(SIGNUP_TIMEOUT_DEFAULT.to_string()).as_str()
-        ).unwrap();
 
-        party.last_ping < now - timeout
+        match u64::from_str(env::var(SIGNUP_TIMEOUT_ENV)
+            .unwrap_or(SIGNUP_TIMEOUT_DEFAULT.to_string()).as_str()) {
+            Ok(timeout) => {party.last_ping < now - timeout}
+            Err(error) => {
+                eprintln!("Error in parsing var: {}, {}", SIGNUP_TIMEOUT_ENV, error);
+                exit(1);
+            }
+        }
+
+
     }
 
     pub fn add_party(&mut self, party_number: u16) -> Result<SigningPartySignup, String> {
         if self.member_info.len() == u16::MAX as usize {
             return Err("The number of parties has exceeded the boundary!".into())
         }
-        let party_signup = SigningRoom::new_sign_party(
-            u16::try_from(self.member_info.len()).unwrap() + 1,
-        );
+        let party_signup = match u16::try_from(self.member_info.len()) {
+            Ok(members_count) => {SigningRoom::new_sign_party(members_count + 1)}
+            Err(error) => {
+                return Err(format!("Error creating party signup: {}", error))
+            }
+        };
+
         self.member_info.insert(party_number, SigningPartyInfo{
             party_id: party_signup.party_uuid.clone(),
             party_order: party_signup.party_order,
@@ -142,20 +153,28 @@ impl SigningRoom {
         match self.member_info.get(&party_number) {
             None => {Err(ManagerError{error:"Party not found!".into()})},
             Some(member_info) => {
-                let room_uuid = if self.last_stage == "signup" {
-                    "".to_string()
+                match u16::try_from(self.active_members().len()) {
+                    Ok(members_count) => {
+                        let room_uuid = if self.last_stage == "signup" {
+                            "".to_string()
+                        }
+                        else {
+                            self.room_uuid.clone()
+                        };
+                        Ok(SigningPartySignup{
+                            party_order: member_info.party_order,
+                            party_uuid: member_info.party_id.clone(),
+                            room_uuid,
+                            total_joined: members_count
+                        })
+                    }
+                    Err(_error) => {
+                        Err(ManagerError{
+                            error: "Error creating party signup".to_string()
+                        })
+                    }
                 }
-                else {
-                    self.room_uuid.clone()
-                };
-                Ok(SigningPartySignup{
-                    party_order: member_info.party_order,
-                    party_uuid: member_info.party_id.clone(),
-                    room_uuid,
-                    total_joined: u16::try_from(self.active_members().len()).unwrap()
-                })
             }
         }
-
     }
 }
