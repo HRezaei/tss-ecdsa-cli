@@ -55,13 +55,7 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
                 chain_code
             );
 
-            let safe_public_key_child =
-                update_hd_derived_public_key(
-                    y_sum_child
-                )
-                ;
-
-            (safe_public_key_child, f_l_new)
+            (y_sum_child, f_l_new)
         }
     };
 
