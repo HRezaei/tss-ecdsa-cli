@@ -56,8 +56,10 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
     let (bc_i, decom_i) = party_keys.phase1_broadcast_phase3_proof_of_correct_key();
 
     let pailiar_key_for_checking = bc_i.clone();
-    is_divisible_by_first_n_primes(pailiar_key_for_checking.e.n, MAX_FIRST_PRIMES);
-    //is_divisible_by_first_n_primes_crate(pailiar_key_for_checking.e.n, MAX_FIRST_PRIMES);
+    if is_divisible_by_first_n_primes(pailiar_key_for_checking.e.n, MAX_FIRST_PRIMES) {
+        eprintln!("Error: unsafe pailiar key found!");
+        exit(1);
+    }
 
     // send commitment to ephemeral public keys, get round 1 commitments of other parties
     assert!(broadcast(
