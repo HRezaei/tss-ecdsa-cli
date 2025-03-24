@@ -121,7 +121,8 @@ struct Claims {
 }
 
 pub fn validate_hex_string(message: &str) -> bool {
-    !message.is_empty() && message.chars().all(|c| c.is_ascii_hexdigit())
+    !message.is_empty() && message.chars().all(|c| c.is_ascii_hexdigit()) &&
+        message.len() > 32
 }
 
 pub fn validate_vss_scheme_vector<E: Curve>(vss_scheme_vec: Vec<VerifiableSS<E>>) -> Result<bool, String> {
