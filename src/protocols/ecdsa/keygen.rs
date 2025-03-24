@@ -42,7 +42,7 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
 
     println!("number: {:?}, uuid: {:?}, curve: {:?}", party_num_int, uuid, CURVE_NAME);
 
-    let party_keys = Keys::create(party_num_int);
+    let party_keys = Keys::create_safe_prime(party_num_int);
 
     let chain_code = generate_shared_chain_code::<Secp256k1, Sha256>(
         client.clone(),
