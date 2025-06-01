@@ -115,7 +115,7 @@ fn validate_t_n_params(num_parties: u16, threshold: u16) -> Result<bool, String>
         .ok()
         .and_then(|max_n| max_n.parse::<u16>().ok())
         .unwrap_or(MANAGER_MAX_PARTIES_DEFAULT);
-    if threshold <= 1 {
+    if threshold < 1 {
         Err(format!("Invalid threshold (t) is given: {}.", threshold).to_string())
     }
     else if num_parties <= threshold {
