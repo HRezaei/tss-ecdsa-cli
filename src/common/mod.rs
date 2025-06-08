@@ -18,6 +18,7 @@ use reqwest::blocking::Client as RequestClient;
 use serde::{Deserialize, Serialize};
 use rand::{rngs::OsRng, TryRngCore};
 use reqwest::header::{HeaderMap, AUTHORIZATION};
+use reqwest::StatusCode;
 use sha2::{Sha256, Digest};
 
 pub type Key = String;
@@ -27,7 +28,9 @@ pub(crate) const MAX_FIRST_PRIMES: usize =  2_i64.pow(25) as usize;
 #[derive(Clone)]
 pub struct Client {
     client: RequestClient,
-    address: String
+    address: String,
+    api_key: String,
+    secret_key: String,
 }
 
 #[allow(dead_code)]
@@ -105,17 +108,57 @@ pub fn error_message(normal_message: &str, debug_message: &str) -> String {
 }
 
 impl Client {
-    pub fn new(addr: String) -> Self {
+    pub fn new(address: String) -> Self {
+        let api_key = env::var(PARTY_HTTP_AUTH_APIKEY_VAR).unwrap_or_else(|_|{
+            eprintln!("\x1b[0;33m Missing env variable: {}, requests will be sent as anonymous user.\x1b[0m", PARTY_HTTP_AUTH_APIKEY_VAR);
+            "anonymous".to_string()
+        });
+
+        let secret_key = env::var(HTTP_AUTH_JWT_SECRET_VAR).unwrap_or_else(|_|{
+            println!("\x1b[0;33m Missing env variable: {}, requests will be sent as anonymous user.\x1b[0m", HTTP_AUTH_JWT_SECRET_VAR);
+            "anonymous_secret_key".to_string()
+        });
+
         Self {
             client: RequestClient::new(),
-            address: addr
+            address,
+            api_key,
+            secret_key,
         }
     }
+
+    fn generate_jwt(&self) -> String {
+        let jwt_expiry_seconds = env::var(HTTP_AUTH_JWT_EXPIRY_VAR)
+            .unwrap_or(HTTP_AUTH_JWT_EXPIRY_DEFAULT.to_string()).parse::<u64>().unwrap_or_else(|e| {
+            println!("Invalid value: {}", e);
+            exit(1);
+        });
+        let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+        // Prepare the JWT
+        let claims = JwtClaims {
+            api_key: self.api_key.clone(), // The subject (party identifier)
+            exp: now + jwt_expiry_seconds,
+        };
+
+        let mut header = Header::default();
+        header.kid = Some(self.api_key.clone());
+        let encoding_key = EncodingKey::from_secret(self.secret_key.as_bytes());
+
+        // Encode the JWT and return the token
+        match encode(&header, &claims, &encoding_key) {
+            Ok(encoded_string) => {encoded_string}
+            Err(error) => {
+                eprintln!("Error encoding JWT: {}", error);
+                exit(1);
+            }
+        }
+    }
+
 }
 
 // Define the claims structure expected in the JWT
 #[derive(Debug, Deserialize, Serialize)]
-struct Claims {
+struct JwtClaims {
     api_key: String,
     exp: u64,
 }
@@ -178,41 +221,6 @@ pub fn aes_decrypt(key: &[u8], aead_pack: AEAD) -> Result<Vec<u8>, String> {
     }
 }
 
-fn generate_jwt() -> String {
-    let http_api_key = env::var(PARTY_HTTP_AUTH_APIKEY_VAR).unwrap_or_else(|_|{
-        eprintln!("Missing env variable: {}", PARTY_HTTP_AUTH_APIKEY_VAR);
-        exit(1);
-    });
-    let jwt_expiry_seconds = env::var(HTTP_AUTH_JWT_EXPIRY_VAR)
-        .unwrap_or(HTTP_AUTH_JWT_EXPIRY_DEFAULT.to_string()).parse::<u64>().unwrap_or_else(|e| {
-        println!("Invalid value: {}", e);
-        exit(1);
-    });
-    let secret_key = env::var(HTTP_AUTH_JWT_SECRET_VAR).unwrap_or_else(|_|{
-        println!("Missing env variable: {}", HTTP_AUTH_JWT_SECRET_VAR);
-        exit(1);
-    });
-    let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
-    // Prepare the JWT
-    let claims = Claims {
-        api_key: http_api_key.clone(), // The subject (party identifier)
-        exp: now + jwt_expiry_seconds,
-    };
-
-    let mut header = Header::default();
-    header.kid = Some(http_api_key);
-    let encoding_key = EncodingKey::from_secret(secret_key.as_bytes());
-
-    // Encode the JWT and return the token
-    match encode(&header, &claims, &encoding_key) {
-        Ok(encoded_string) => {encoded_string}
-        Err(error) => {
-            eprintln!("Error encoding JWT: {}", error);
-            exit(1);
-        }
-    }
-}
-
 pub fn postb<T>(client: &Client, path: &str, body: T) -> Option<String>
     where
         T: serde::ser::Serialize,
@@ -220,21 +228,40 @@ pub fn postb<T>(client: &Client, path: &str, body: T) -> Option<String>
     let addr = client.address.clone();
     let retries = 3;
     let retry_delay = time::Duration::from_millis(250);
-    let jwt_token = generate_jwt();
+    let jwt_token = client.generate_jwt();
 
     // Create the headers with the API key
     let mut headers = HeaderMap::new();
     headers.insert(AUTHORIZATION, format!("Bearer {}", jwt_token).parse().unwrap());
 
-    for _i in 1..retries {
+    for i in 1..retries {
         let addr = format!("{}/{}", addr, path);
         let res = client.client.post(&addr)
             .headers(headers.clone())
             .json(&body)
             .send();
 
-        if let Ok(res) = res {
-            return Some(res.text().unwrap());
+        match res {
+            Ok(response) => {
+                match response.status() {
+                    StatusCode::OK => {
+                        return Some(response.text().unwrap())
+                    }
+                    StatusCode::UNAUTHORIZED => {
+                        eprintln!("Unauthorized request for {}", addr);
+                        return None
+                    }
+                    other_codes => {
+                        if i==retries {
+                            eprintln!("{} Retries failed for {} wuth code {}", retries, addr, other_codes);
+                        }
+                    }
+                }
+
+            },
+            Err(error) => {
+                eprintln!("Error postb: {}", error);
+            }
         }
         thread::sleep(retry_delay);
     }
@@ -315,7 +342,8 @@ pub fn poll_for_broadcasts(
                     }
                 }
                 if start_time.elapsed().as_secs() > timeout {
-                    panic!("Polling timed out! No response received from party number {:?}", i);
+                    eprintln!("Polling timed out! No response received from party number {:?}", i);
+                    exit(1);
                 };
 
                 thread::sleep(delay);
