@@ -4,10 +4,127 @@ use curv::elliptic::curves::{Point, Scalar, Secp256k1};
 
 #[cfg(test)]
 mod tests {
-    use curv::arithmetic::Converter;
+    use std::convert::{TryInto};
+    use std::str::FromStr;
+    use bip32::{ChildNumber, ExtendedKeyAttrs, ExtendedPublicKey, KeyFingerprint, PublicKeyBytes, XPub};
+    use bip32::secp256k1::elliptic_curve::PublicKey;
+    use bip32::secp256k1::ecdsa::VerifyingKey;
+    use curv::arithmetic::{Converter};
     use curv::BigInt;
     use curv::elliptic::curves::{Point, Secp256k1};
+    use hex::ToHex;
     use crate::hd_keys;
+    use crate::protocols::ecdsa::{FE};
+    use coins_bip32::prelude::{XPub as Bip32CoinsXPub};
+    use coins_bip32::primitives::{
+        XKeyInfo,
+        KeyFingerprint as CoinsBip32KeyFingerprint,
+        Hint,
+        ChainCode as CoinsBip32ChainCode
+    };
+    use coins_bip32::prelude::*;
+    use coins_bip32::prelude::k256::elliptic_curve::sec1::FromEncodedPoint;
+    use coins_bip32::xkeys::Parent;
+
+    fn decompress_point(point_bytes: [u8;33]) -> (Vec<u8>, Vec<u8>) {
+        use k256::{EncodedPoint, PublicKey};
+
+        // Parse compressed pubkey to PublicKey
+        let encoded_point = EncodedPoint::from_bytes(&point_bytes)
+            .expect("Invalid encoded point");
+        let pub_key = PublicKey::from_encoded_point(&encoded_point).unwrap();
+        let binding = pub_key.to_encoded_point(false);
+
+        let child_x = binding.x().unwrap();
+        let child_y = binding.y().unwrap();
+
+        (child_x.to_vec(), child_y.to_vec())
+    }
+
+    fn derive_child_by_crate_bip32(pub_key: Vec<u8>, chain_code: Vec<u8>, path: String) -> (String, String) {
+        let finger_print = KeyFingerprint::from([0u8; 4]);
+        let pub_key_bytes: PublicKeyBytes = pub_key.try_into().unwrap();
+        let verifying_key = VerifyingKey::from_sec1_bytes(&pub_key_bytes).unwrap();
+
+        let pub_key_crate = XPub::new(verifying_key, ExtendedKeyAttrs {
+            depth: 0,
+            parent_fingerprint: finger_print,
+            child_number: ChildNumber(10), //This is not important during HD derivation
+            chain_code: chain_code.try_into().unwrap(),
+        });
+
+        let path_numbers = path.split('/')
+            .map(|s| s.parse::<u32>().expect("Invalid number"));
+
+        let mut child_key = pub_key_crate;
+        for child_path in path_numbers {
+            let child_num = ChildNumber(child_path);
+            child_key = child_key.derive_child(child_num).unwrap();
+        }
+
+        let child_x: String = child_key.public_key().to_encoded_point(false).x().unwrap()
+            .encode_hex();
+        let child_y: String = child_key.public_key().to_encoded_point(false).y().unwrap()
+            .encode_hex();
+
+        (child_x, child_y)
+    }
+
+    fn derive_child_by_crate_hdwallet(pub_key: Vec<u8>, chain_code: Vec<u8>, path: String) -> (String, String) {
+
+        let finger_print = KeyFingerprint::from([0u8; 4]);
+        let pub_key_bytes: PublicKeyBytes = pub_key.try_into().unwrap();
+        let public_key: PublicKey<bip32::secp256k1::Secp256k1> = PublicKey::from_sec1_bytes(pub_key_bytes.to_vec().as_slice()).unwrap();
+        let master_key = ExtendedPublicKey::new(public_key, ExtendedKeyAttrs {
+            depth: 0,
+            parent_fingerprint: finger_print,
+            child_number: ChildNumber(10), // This is not important for HD
+            chain_code: chain_code.try_into().unwrap(),
+        });
+
+        let path_numbers = path.split('/')
+            .map(|s| s.parse::<u32>().expect("Invalid number"));
+
+        let mut child = master_key;
+        for child_path in path_numbers {
+            let child_num = ChildNumber(child_path);
+            child = child.derive_child(child_num).unwrap();
+        }
+
+        let child_x: String = child.public_key().to_encoded_point(false).x().unwrap()
+            .encode_hex();
+        let child_y: String = child.public_key().to_encoded_point(false).y().unwrap()
+            .encode_hex();
+
+        (child_x, child_y)
+    }
+
+    fn derive_child_by_coins_bip32(pub_key: Vec<u8>, chain_code: Vec<u8>, path: String) -> (String, String) {
+        let finger_print = CoinsBip32KeyFingerprint::from([0u8; 4]);
+        let pub_key_bytes: PublicKeyBytes = pub_key.try_into().unwrap();
+        let verifying_key = VerifyingKey::from_sec1_bytes(&pub_key_bytes).unwrap();
+        let mut chain_code_32_bytes = [0u8; 32]; // Initialize with zeroes
+        chain_code_32_bytes[..chain_code.len()].copy_from_slice(chain_code.as_slice()); // Copy as much as fits
+        let pub_key_crate = Bip32CoinsXPub::new(verifying_key, XKeyInfo {
+            depth: 0,
+            parent: finger_print,
+            chain_code: CoinsBip32ChainCode::from(chain_code_32_bytes),
+            index: 0,
+            hint: Hint::Legacy,
+        });
+
+        let path_numbers = path.split('/')
+            .map(|s| s.parse::<u32>().expect("Invalid number"));
+
+        let mut child = pub_key_crate;
+        for child_num in path_numbers {
+            child = child.derive_child(child_num).unwrap();
+        }
+
+        let (child_x, child_y) = decompress_point(child.to_sec1_bytes());
+
+        (hex::encode(child_x), hex::encode(child_y))
+    }
 
     #[test]
     fn test_pubkey() {
@@ -27,8 +144,170 @@ mod tests {
         assert_eq!(public_key_child.y_coord().unwrap().to_hex(), expected_pubkey_y);
     }
 
-}
+    #[test]
+    fn test_hd_with_crate(){
+        let original_x = BigInt::from_hex(
+            "d6f3c325eb3fda7061983141278484c0dd452a6702fd537b89c09ddf2b6f3238").unwrap();
+        let original_y = BigInt::from_hex(
+            "4e12adae75c29b29cc094fd3d94aa401ea646104f0d1ae3c59f710ec92640e21").unwrap();
+        let original_public_key: Point<Secp256k1> = Point::<Secp256k1>::from_coords(&original_x, &original_y).expect("Failed to create the point");
 
+        let path = "1/0/2";
+        let ours_expected_pubkey_x = "f0455a6fb01d03fe0ac0259bc174ebe50cd471a641fe11b38661950fdd5477b9";
+        let ours_expected_pubkey_y = "93ee707745153a12bfe6b72f2965398fc294376aae55ffe828dcc3664007c240";
+        let expected_pubkey_x = "dfd4557dc4d15178c373240d0033ab1a66abfe796c3a4485240496a82b0fda68";
+        let expected_pubkey_y = "9263b6e81791a678b29d4d3b5a56437fd80474d33168ead877fccdd6652f6954";
+        let chain_code_scalar = FE::from(1);
+        let chain_code_point = chain_code_scalar.clone() * Point::<Secp256k1>::generator().to_point();
+        let (public_key_child, _) = hd_keys::get_hd_key(&original_public_key, path, chain_code_point);
+
+        let trepca_x = public_key_child.x_coord().unwrap().to_hex();
+        let trepca_y = public_key_child.y_coord().unwrap().to_hex();
+
+        let original_pubkey_bytes = original_public_key.to_bytes(true).to_vec();
+        let chain_code_bytes = chain_code_scalar.to_bytes().to_vec();
+
+        let (bip32_x, bip32_y) = derive_child_by_crate_bip32(
+            original_pubkey_bytes.clone(),
+            chain_code_bytes.clone(),
+            path.to_string()
+        );
+        let (hd_wallet_x, hd_wallet_y) = derive_child_by_crate_hdwallet(
+            original_pubkey_bytes.clone(),
+            chain_code_bytes.clone(),
+            path.to_string()
+        );
+        let (coins_x, coins_y) = derive_child_by_coins_bip32(
+            original_pubkey_bytes,
+            chain_code_bytes,
+            path.to_string()
+        );
+
+        assert_eq!(coins_x, bip32_x);
+        assert_eq!(coins_y, bip32_y);
+
+        assert_eq!(hd_wallet_x, bip32_x);
+        assert_eq!(hd_wallet_y, bip32_y);
+
+        assert_eq!(bip32_x, expected_pubkey_x);
+        assert_eq!(bip32_y, expected_pubkey_y);
+
+        assert_eq!(trepca_x, ours_expected_pubkey_x);
+        assert_eq!(trepca_y, ours_expected_pubkey_y);
+
+        assert_eq!(expected_pubkey_x, ours_expected_pubkey_x);
+        assert_eq!(expected_pubkey_y, ours_expected_pubkey_y);
+
+    }
+
+    fn pub_key_coords(xpub: bitcoin::bip32::Xpub) -> (String, String) {
+        let uncompressed = xpub.public_key.serialize_uncompressed();
+
+        // Slice out x and y coordinates
+        let x = &uncompressed[1..33]; // bytes 1 to 32
+        let y = &uncompressed[33..65]; // bytes 33 to 64
+
+        (hex::encode(x), hex::encode(y))
+    }
+
+    #[test]
+    fn test_hd_derivation_based_on_bip32_docs() {
+        /**
+        Reference keys are copied from here:
+        https://en.bitcoin.it/wiki/BIP_0032#Test_Vectors
+        */
+        use bitcoin::bip32::{Xpriv, DerivationPath};
+        use bitcoin::bip32::Xpub;
+        use bitcoin::network::Network;
+        use bitcoin::secp256k1::Secp256k1 as BitcoinSecp256k1;
+        use hex::decode;
+
+        let seed_hex = "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542";
+        let seed_bytes = decode(seed_hex).expect("Invalid hex");
+
+        let secp = BitcoinSecp256k1::new();
+
+        // Derive master key (m)
+        let master = Xpriv::new_master(Network::Bitcoin, &seed_bytes).expect("Master key error");
+        let master_xprv = master.to_string();
+        let master_pub_key = Xpub::from_priv(&secp, &master);
+
+        let expected_master_key = "xprv9s21ZrQH143K31xYSDQpPDxsXRTUcvj2iNHm5NUtrGiGG5e2DtALGdso3pGz6ssrdK4PFmM8NSpSBHNqPqm55Qn3LqFtT2emdEXVYsCzC2U";
+        let expected_master_pub = "xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB";
+        println!("=== Chain m ===");
+        println!("Expected xprv: {:?}", expected_master_key);
+        println!("Derived  xprv: {}", master_xprv);
+        println!("Expected xpub: {:?}", expected_master_pub);
+        println!("Derived  xpub: {}", master_pub_key.to_string());
+
+        assert_eq!(expected_master_key, master_xprv);
+        assert_eq!(expected_master_pub, master_pub_key.to_string());
+
+        // Derive child key at m/0
+        let bip32_path = DerivationPath::from_str("m/0").unwrap();
+        let child = master.derive_priv(&secp, &bip32_path).expect("Child key error");
+        let child_private_key = child.to_string();
+        let child_pub_key = Xpub::from_priv(&secp, &child);
+
+        let expected_child_key = "xprv9vHkqa6EV4sPZHYqZznhT2NPtPCjKuDKGY38FBWLvgaDx45zo9WQRUT3dKYnjwih2yJD9mkrocEZXo1ex8G81dwSM1fwqWpWkeS3v86pgKt";
+        let expected_child_pub = "xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH";
+        println!("\n=== Chain m/0 ===");
+        println!("Expected xprv: {:?}", expected_child_key);
+        println!("Derived  xprv: {}", child_private_key);
+        println!("Expected xpub: {:?}", expected_child_pub);
+        println!("Derived  xpub: {}", child_pub_key.to_string());
+
+        // Slice out x and y coordinates
+        let (child_pub_x, child_pub_y) = pub_key_coords(child_pub_key); // bytes 1 to 32
+        println!("\nChild public key coordinates:");
+        println!("X = {}", child_pub_x);
+        println!("Y = {}", child_pub_y);
+
+        assert_eq!(expected_child_key, child_private_key);
+        assert_eq!(expected_child_pub, child_pub_key.to_string());
+
+        let (x, y) = pub_key_coords(master_pub_key);
+        println!("\nMaster public key coordinates:");
+        println!("X = {}", x);
+        println!("Y = {}", y);
+
+        let secp2 = BitcoinSecp256k1::new();
+        let child_from_pub = master_pub_key.derive_pub(&secp2, &bip32_path).expect("Child key error");
+        let (x, y) = pub_key_coords(child_from_pub);
+        println!("\nChild public key from public key coordinates:");
+        println!("X = {}", x);
+        println!("Y = {}", y);
+        //###################################################
+        let t = master_pub_key.public_key.serialize();
+        println!("seed: {}", t.len());
+        let original_public_key: Point<Secp256k1> = Point::<Secp256k1>::from_bytes(t.as_slice()).unwrap();
+
+        println!("\nMaster public key coordinates in our lib:");
+        println!("x: {:?}", original_public_key.x_coord().unwrap().to_hex());
+        println!("y: {:?}", original_public_key.y_coord().unwrap().to_hex());
+
+        let chain_code_scalar = FE::from(1);
+        let chain_code_point = chain_code_scalar.clone() * Point::<Secp256k1>::generator().to_point();
+        println!("cc len: {:?}", &chain_code_point.to_bytes(true).len());
+        let path = "0";
+
+        let (bip32_child_x, bip32_child_y) = derive_child_by_crate_bip32(master_pub_key.public_key.serialize().to_vec(),
+                                                                         master_pub_key.chain_code.to_bytes().to_vec(), path.to_string());
+
+        assert_eq!(bip32_child_x, child_pub_x);
+        assert_eq!(bip32_child_y, child_pub_y);
+
+        let (hd_wallet_x, hd_wallet_y) = derive_child_by_crate_hdwallet(master_pub_key.public_key.serialize().to_vec(),
+                                                                        master_pub_key.chain_code.to_bytes().to_vec(), path.to_string());
+        assert_eq!(bip32_child_x, hd_wallet_x);
+        assert_eq!(bip32_child_y, hd_wallet_y);
+
+        let (coins_x, coins_y) = derive_child_by_coins_bip32(master_pub_key.public_key.serialize().to_vec(),
+                                                             master_pub_key.chain_code.to_bytes().to_vec(), path.to_string());
+        assert_eq!(bip32_child_x, coins_x);
+        assert_eq!(bip32_child_y, coins_y);
+    }
+}
 
 
 #[allow(dead_code)]
