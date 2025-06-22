@@ -21,6 +21,7 @@ mod common;
 mod protocols;
 #[cfg(test)]
 mod test;
+mod test_ed25519;
 
 fn main() {
     let matches = App::new("TSS CLI Utility")
