@@ -123,10 +123,6 @@ pub fn run_pubkey_or_sign(
     params:Vec<&str>,
 ) -> Value
 {
-    if !validate_hex_string(message_str) {
-        println!("Invalid message string.");
-        exit(1);
-    }
     // Read data from keys file
     let ECDSAParameters {
         party_key,
@@ -164,6 +160,12 @@ pub fn run_pubkey_or_sign(
         ret_dict
     }
     else {
+
+        if !validate_hex_string(message_str) {
+            println!("Invalid message string.");
+            exit(1);
+        }
+
         // Parse message to sign
         let message = match hex::decode(message_str) {
             Ok(x) => x,
