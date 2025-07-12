@@ -88,7 +88,7 @@ fn main() {
                     .index(3)
                     .required(true)
                     .takes_value(true)
-                    .help("Message to sign in hex format"))
+                    .help("Message to sign in hex format. It has to be at least 32 chars long."))
                 .arg(Arg::with_name("path")
                     .short("p")
                     .long("path")

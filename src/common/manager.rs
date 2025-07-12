@@ -127,7 +127,7 @@ fn parse_user_secrets_from_env() -> Result<HashMap<String, String>, bool> {
 
 
 fn validate_t_n_params(num_parties: u16, threshold: u16) -> Result<bool, String> {
-    let max_allowed_parties = std::env::var(MANAGER_MAX_PARTIES_VAR)
+    let max_allowed_parties = env::var(MANAGER_MAX_PARTIES_VAR)
         .ok()
         .and_then(|max_n| max_n.parse::<u16>().ok())
         .unwrap_or(MANAGER_MAX_PARTIES_DEFAULT);

@@ -200,7 +200,7 @@ pub(crate) fn check_key_file(keysfile_path:&str, limit: usize) -> bool {
     // Read data from keys file
     match ECDSAParameters::read_from_file (keysfile_path.to_string()) {
         Ok(params) => {
-            println!("MAX_FIRST_PRIMES is set to: {:?}", MAX_FIRST_PRIMES);
+            println!("max_first primes is set to: {:?}", limit);
 
 
             let mut failed = false;

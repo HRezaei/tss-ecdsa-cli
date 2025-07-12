@@ -26,6 +26,27 @@ This branch also includes EdDSA based on https://github.com/ZenGo-X/multi-party-
     cargo build --release
     ```
 
+## Configuration
+
+Here is a list of environment variables used to configure the tool:
+
+| Name                            | Default    | Description                                                                                                                                                                                                        | 
+|---------------------------------|------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| TSS_LOG_LEVEL                   | production | If set to debug, some logged messages and errors will be more informative                                                                                                                                          |
+| TSS_CLI_POLL_TIMEOUT            | 30         | The number of seconds to retry receiving messages from other parties.                                                                                                                                              |
+| TSS_CLI_SIGNUP_TIMEOUT          | 30         | The number of seconds to wait for all other parties to join the room.                                                                                                                                              |
+| TSS_CLI_MANAGER_TTL             | 300        | The number of seconds to keep data of a room. After this time, the room won't be available anymore.                                                                                                                |
+| TSS_MANAGER_MAX_PARTIES         | 10         | The maximum allowed value for the "n" parameter in "t of n TSS"                                                                                                                                                    |
+| TSS_MANAGER_HTTP_AUTH_KEY_PAIRS | NA         | A string like user1name=user1password,user2name=user2password                                                                                                                                                      |
+| TSS_MANAGER_SIGNUP_TIMEOUT      | 2          | The number of seconds manager allows each party to remain offline. If after of this number of seconds no request is received from a party, the manager considers that party as dead/crashed.                       |
+| TSS_HTTP_AUTH_JWT_TTL           | 10         | The number of seconds the http JWT tokens will remain valid.                                                                                                                                                       |
+| TSS_PARTY_JWT_APIKEY            | NA         | The API key (username) of each individual party which must be set in the environment specific to that party. It also needs to be included in the value for TSS_MANAGER_HTTP_AUTH_KEY_PAIRS on the manager machine. |
+| TSS_PARTY_JWT_SECRET            | NA         | The password for signing JWT tokens. Must be specific for each party. It also needs to be included in the value for TSS_MANAGER_HTTP_AUTH_KEY_PAIRS on the manager machine.                                        |
+| ROCKET_ADDRESS                  | 127.0.0.1  | The IP on which Manager is going to be accessible.                                                                                                                                                                 |
+| ROCKET_PORT                     | 8000       | The port on which Manager is going to be accessible.                                                                                                                                                               |
+
+
+
 ## Keygen
 
 1. Run state manager which is managing the communication between parties:
@@ -52,7 +73,9 @@ This branch also includes EdDSA based on https://github.com/ZenGo-X/multi-party-
 
     ARGS:
         <keysfile>    Target keys file
-        <params>      Threshold params: threshold/parties (t+1/n). E.g. 1/3 for 2 of 3 schema.
+        <params>      Threshold params: threshold/parties (t+1/n). E.g. 1/3 for 2 of 3 schema. The parameter n must not
+                      be greater than the value set for env var TSS_MANAGER_MAX_PARTIES (default: 10). Also, t must be
+                      greater than 0 and less than or equal to n, i.e. 0 < t < n <= TSS_MANAGER_MAX_PARTIES.  
 
    
     # Run keygen for each party
@@ -101,8 +124,11 @@ OPTIONS:
     -c, --cc <chain_code>        Hex representation of chain_code
 ARGS:
     <keysfile>    Keys file
-    <params>      Threshold params: threshold/parties (t+1/n). E.g. 1/3 for 2 of 3 schema.
-    <message>     Message to sign in hex format
+    <params>      Threshold params: threshold/parties (t+1/n). E.g. 1/3 for 2 of 3 schema. The parameter n must not be
+                  greater than the value set for env var TSS_MANAGER_MAX_PARTIES (default: 10). Also, t must be
+                  greater than 0 and less than or equal to n, i.e. 0 < t < n <= TSS_MANAGER_MAX_PARTIES.  
+
+    <message>     Message to sign in hex format. It has to be at least 32 chars long.
 
 
 ./target/release/tss_cli sign keys1.store -p 0/1/2 -a http://127.0.0.1:8001 1/2 SignMe
@@ -117,4 +143,34 @@ ARGS:
    "x":"973dba2e6c622d0d62626b5cc20e9561dd6123afca96d7b811f637900e68d99e",
    "y":"7c1b2d91cdbfd6e9ceab48dc94aedfd021e314f4d90d18cbb8a4b40d543f85cd"
 }
+```
+
+## Keyfile Safety Check
+Checks a given key file against small prime factors to make sure it's not vulnerable to Paillier Key Vulnerability 
+[CVE-2023-33241]. See [here](https://www.fireblocks.com/blog/gg18-and-gg20-paillier-key-vulnerability-technical-report) 
+for more details. This check is designed only for ECDSA key files.
+
+```shell
+USAGE:
+    tss_cli safety_check [OPTIONS] <input_file>
+
+OPTIONS:
+    --max_first <max_first>    Maximum number of first small primes to check against. Default: 33554432 (2^25)
+ARGS:
+    <input_file>    Keys file. It only accepts ECDSA keys.
+    
+
+./target/release/tss_cli safety_check keys1.store 
+# Output: 
+# max_first primes is set to: 33554432
+# Checking paillier_key_vector[..].n
+# Key file check successful!
+
+
+./target/release/tss_cli safety_check keys1.store 121270018
+# Output:
+# max_first primes is set to: 121270018
+# Checking paillier_key_vector[..].n
+# Key file check successful!
+
 ```

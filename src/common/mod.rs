@@ -26,6 +26,8 @@ pub type Key = String;
 pub(crate) const MAX_FIRST_PRIMES: usize =  2_i64.pow(25) as usize;
 pub(crate) const MANAGER_ERROR_MESSAGE: &str = "Manager returned error";
 const INVALID_KEY_LEN_ERROR: &str = "Key length is invalid!";
+const TSS_CLI_POLL_TIMEOUT_VAR: &str = "TSS_CLI_POLL_TIMEOUT";
+const TSS_CLI_POLL_TIMEOUT_DEFAULT: u64 = 30;
 
 #[derive(Clone)]
 pub struct Client {
@@ -37,10 +39,10 @@ pub struct Client {
 
 #[allow(dead_code)]
 pub const AES_KEY_BYTES_LEN: usize = 32;
-pub const PARTY_HTTP_AUTH_APIKEY_VAR: &str = "TSS_PARTY_HTTP_AUTH_APIKEY";
+pub const PARTY_HTTP_AUTH_APIKEY_VAR: &str = "TSS_PARTY_JWT_APIKEY";
 pub const HTTP_AUTH_JWT_EXPIRY_VAR: &str = "TSS_HTTP_AUTH_JWT_TTL";
 pub const HTTP_AUTH_JWT_EXPIRY_DEFAULT: &str = "10";
-const HTTP_AUTH_JWT_SECRET_VAR: &str = "TSS_HTTP_AUTH_JWT_SECRET";
+const HTTP_AUTH_JWT_SECRET_VAR: &str = "TSS_PARTY_JWT_SECRET";
 pub const LOG_LEVEL_ENV_VAR: &str = "TSS_LOG_LEVEL";
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
@@ -320,8 +322,8 @@ pub fn poll_for_broadcasts(
     sender_uuid: String,
 ) -> Vec<String> {
     let mut ans_vec = Vec::new();
-    let timeout = std::env::var("TSS_CLI_POLL_TIMEOUT")
-        .unwrap_or("30".to_string()).parse::<u64>().unwrap();
+    let timeout = std::env::var(TSS_CLI_POLL_TIMEOUT_VAR)
+        .unwrap_or(TSS_CLI_POLL_TIMEOUT_DEFAULT.to_string()).parse::<u64>().unwrap();
     for i in 1..=n {
         if i != party_num {
             let key = format!("{}-{}-{}", i, round, sender_uuid);
@@ -370,8 +372,8 @@ pub fn poll_for_p2p(
     sender_uuid: String,
 ) -> Vec<String> {
     let mut ans_vec = Vec::new();
-    let timeout = std::env::var("TSS_CLI_POLL_TIMEOUT")
-        .unwrap_or("30".to_string()).parse::<u64>().unwrap();
+    let timeout = env::var(TSS_CLI_POLL_TIMEOUT_VAR)
+        .unwrap_or(TSS_CLI_POLL_TIMEOUT_DEFAULT.to_string()).parse::<u64>().unwrap();
     for i in 1..=n {
         if i != party_num {
             let key = format!("{}-{}-{}-{}", i, party_num, round, sender_uuid);
