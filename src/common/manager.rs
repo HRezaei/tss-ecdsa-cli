@@ -23,6 +23,7 @@ const TSS_CLI_MANAGER_TTL_DEFAULT: &str = "300";
 const MANAGER_MAX_PARTIES_VAR: &str = "TSS_MANAGER_MAX_PARTIES";
 const MANAGER_MAX_PARTIES_DEFAULT: u16 = 10;
 const HTTP_AUTH_KEY_PAIRS_VAR: &str = "TSS_MANAGER_HTTP_AUTH_KEY_PAIRS";
+const LOCKING_ERROR_MESSAGE: &str = "Could not acquire lock!";
 // Define the ApiKey struct, which will be extracted from the JWT token
 pub struct ApiKeyJwt {
     api_key: String
@@ -131,7 +132,7 @@ fn validate_t_n_params(num_parties: u16, threshold: u16) -> Result<bool, String>
         .and_then(|max_n| max_n.parse::<u16>().ok())
         .unwrap_or(MANAGER_MAX_PARTIES_DEFAULT);
     if threshold < 1 {
-        Err(format!("Invalid threshold (t) is given: {}.", threshold).to_string())
+        Err(format!("Invalid threshold (t) is given: {}. It must be grater than 1.", threshold).to_string())
     }
     else if num_parties <= threshold {
         Err(format!("The threshold (t) must be lower than total parties {}, passed: {}",
@@ -205,7 +206,7 @@ fn get(
             }
         }
         Err(error) => {
-            Json(Err(ManagerError{error: error_message("Could not acquire lock!", &error.to_string())}))
+            Json(Err(ManagerError{error: error_message(LOCKING_ERROR_MESSAGE, &error.to_string())}))
         }
     }
 
@@ -225,7 +226,7 @@ fn set(db_mtx: &State<RwLock<TtlHashMap<Key, String>>>,
             Json(Ok(()))
         }
         Err(error) => {
-            Json(Err(ManagerError{error: error_message("Could not acquire lock!", &error.to_string())}))
+            Json(Err(ManagerError{error: error_message(LOCKING_ERROR_MESSAGE, &error.to_string())}))
         }
     }
 
@@ -312,7 +313,7 @@ fn signup_keygen(
 
         }
         Err(error) => {
-            Json(Err(ManagerError{error: error_message("Could not acquire lock!", &error.to_string())}))
+            Json(Err(ManagerError{error: error_message(LOCKING_ERROR_MESSAGE, &error.to_string())}))
         }
     }
 }
@@ -342,7 +343,7 @@ fn signup_sign(
         Ok(hm) => hm,
         Err(error) => {
             return Json(Err(ManagerError{
-                error: error_message("Could not acquire lock!", &error.to_string())
+                error: error_message(LOCKING_ERROR_MESSAGE, &error.to_string())
             }))
         }
     };

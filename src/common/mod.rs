@@ -25,6 +25,7 @@ pub type Key = String;
 
 pub(crate) const MAX_FIRST_PRIMES: usize =  2_i64.pow(25) as usize;
 pub(crate) const MANAGER_ERROR_MESSAGE: &str = "Manager returned error";
+const INVALID_KEY_LEN_ERROR: &str = "Key length is invalid!";
 
 #[derive(Clone)]
 pub struct Client {
@@ -187,7 +188,7 @@ pub fn validate_vss_scheme_vector<E: Curve>(vss_scheme_vec: Vec<VerifiableSS<E>>
 #[allow(dead_code)]
 pub fn aes_encrypt(key: &[u8], plaintext: &[u8]) -> Result<AEAD, String> {
     if key.len() != AES_KEY_BYTES_LEN {
-        return Err(String::from("Key length is invalid"));
+        return Err(String::from(INVALID_KEY_LEN_ERROR));
     }
     let aes_key = aes_gcm::Key::from_slice(key);
     let cipher = Aes256Gcm::new(aes_key);
@@ -209,7 +210,7 @@ pub fn aes_encrypt(key: &[u8], plaintext: &[u8]) -> Result<AEAD, String> {
 #[allow(dead_code)]
 pub fn aes_decrypt(key: &[u8], aead_pack: AEAD) -> Result<Vec<u8>, String> {
     if key.len() != AES_KEY_BYTES_LEN {
-        return Err(String::from("Key length is invalid"));
+        return Err(String::from(INVALID_KEY_LEN_ERROR));
     }
     let aes_key = aes_gcm::Key::from_slice(key);
     let nonce = Nonce::from_slice(&aead_pack.tag);
@@ -261,7 +262,13 @@ pub fn postb<T>(client: &Client, path: &str, body: T) -> Option<String>
 
             },
             Err(error) => {
-                eprintln!("Error postb: {}", error);
+                if i == retries {
+                    eprintln!("Posting data to manager returned an error: {}. Stopped retrying.", error);
+                }
+                else {
+                    eprintln!("Posting data to manager returned an error: {}. Retrying...", error);
+                }
+
             }
         }
         thread::sleep(retry_delay);
@@ -474,7 +481,7 @@ pub fn signup(path: &str, client: &Client, params: &Params, room_id: String, par
                         }
                     },
                     Err(ManagerError{error}) => {
-                        panic!("{}", error);
+                        panic!("Manager returned an error in response to signup request: {}", error);
                     }
                 };
                 if now.elapsed().unwrap().as_secs() > timeout{

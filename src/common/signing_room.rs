@@ -10,6 +10,8 @@ use crate::common::{ManagerError, SigningPartyInfo, SigningPartySignup};
 
 pub const SIGNUP_TIMEOUT_ENV: &str = "TSS_MANAGER_SIGNUP_TIMEOUT";
 pub const SIGNUP_TIMEOUT_DEFAULT: &str = "2";
+const ROOM_CREATION_ERROR_MESSAGE: &str = "Error creating party signup";
+const PARTY_NOT_FOUND_MESSAGE: &str = "Party not found!";
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct SigningRoom {
@@ -67,7 +69,7 @@ impl SigningRoom {
         let party_signup = match u16::try_from(self.member_info.len()) {
             Ok(members_count) => {SigningRoom::new_sign_party(members_count + 1)}
             Err(error) => {
-                return Err(format!("Error creating party signup: {}", error))
+                return Err(format!("{}: {}", ROOM_CREATION_ERROR_MESSAGE, error))
             }
         };
 
@@ -82,7 +84,7 @@ impl SigningRoom {
 
     pub fn replace_party(&mut self, party_number: u16) -> Result<SigningPartySignup, ManagerError> {
         match self.member_info.get(&party_number) {
-            None => {Err(ManagerError{error:"Party not found!".into()})}
+            None => {Err(ManagerError{error: PARTY_NOT_FOUND_MESSAGE.into()})}
             Some(old_party) => {
                 let party_signup= SigningRoom::new_sign_party(old_party.party_order);
                 self.member_info.insert(party_number, SigningPartyInfo{
@@ -110,14 +112,14 @@ impl SigningRoom {
 
     pub fn is_member_active(&self, party_number: u16) -> Result<bool, ManagerError> {
         match self.member_info.get(&party_number) {
-            None => {Err(ManagerError{error:"Party not found!".into()})},
+            None => {Err(ManagerError{error: PARTY_NOT_FOUND_MESSAGE.into()})},
             Some(party_data) => {Ok(!SigningRoom::is_timeout(party_data))}
         }
     }
 
     pub fn update_ping(&mut self, party_number: u16) -> Result<SigningPartySignup, ManagerError> {
         match self.member_info.get_mut(&party_number) {
-            None => {Err(ManagerError{error:"Party not found!".into()})},
+            None => {Err(ManagerError{error: PARTY_NOT_FOUND_MESSAGE.into()})},
             Some(party_data) => {
                 party_data.last_ping = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
                 if self.is_full() && self.active_members().len() >= usize::from(self.room_size) {
@@ -151,7 +153,7 @@ impl SigningRoom {
 
     pub fn get_signup_info(&self, party_number: u16) -> Result<SigningPartySignup, ManagerError> {
         match self.member_info.get(&party_number) {
-            None => {Err(ManagerError{error:"Party not found!".into()})},
+            None => {Err(ManagerError{error: PARTY_NOT_FOUND_MESSAGE.into()})},
             Some(member_info) => {
                 match u16::try_from(self.active_members().len()) {
                     Ok(members_count) => {
@@ -170,7 +172,7 @@ impl SigningRoom {
                     }
                     Err(_error) => {
                         Err(ManagerError{
-                            error: "Error creating party signup".to_string()
+                            error: ROOM_CREATION_ERROR_MESSAGE.to_string()
                         })
                     }
                 }

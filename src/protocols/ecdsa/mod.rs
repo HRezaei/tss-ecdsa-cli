@@ -20,7 +20,7 @@ use curv::elliptic::curves::{Point, Scalar, Secp256k1};
 use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::{
     Keys, SharedKeys
 };
-use crate::protocols::{INVALID_FRAGMENT_FILE_ERROR, INVALID_MESSAGE_STRING_ERROR};
+use crate::protocols::{CHAIN_CODE_ERROR_IN_FILE, INVALID_FRAGMENT_FILE_ERROR, INVALID_MASTER_PUBLIC_KEY_IN_FILE, INVALID_MESSAGE_STRING_ERROR, PARTY_ID_ERROR_IN_FILE, PARTY_INDEX_ERROR_IN_FILE, PRIVATE_KEY_ERROR_IN_FILE, PUBLIC_KEY_ERROR_IN_FILE, SHARED_KEY_ERROR_IN_FILE};
 
 //pub type Key = String;
 pub static CURVE_NAME: &str = "ECDSA";
@@ -72,11 +72,11 @@ impl ECDSAParameters {
 
     pub fn validate(&self) -> Result<bool, String> {
         if self.party_key.y_i.is_zero() {
-            return Err("Invalid public key in party_key".to_string());
+            return Err(PUBLIC_KEY_ERROR_IN_FILE.to_string());
         }
 
         if self.party_key.u_i.is_zero() {
-            return Err("Invalid private key in party_key".to_string());
+            return Err(PRIVATE_KEY_ERROR_IN_FILE.to_string());
         }
 
         if self.party_key.dk.p.is_zero() || self.party_key.dk.q.is_zero() {
@@ -88,24 +88,24 @@ impl ECDSAParameters {
         }
 
         if self.party_key.party_index == 0 {
-            return Err("Invalid party index in party_key".to_string());
+            return Err(PARTY_INDEX_ERROR_IN_FILE.to_string());
         }
 
         if self.chain_code.is_zero() {
-            return Err("Invalid chain code".to_string());
+            return Err(CHAIN_CODE_ERROR_IN_FILE.to_string());
         }
 
         if self.shared_keys.y.is_zero()
             || self.shared_keys.x_i.is_zero() {
-            return Err("Invalid shared keys".to_string());
+            return Err(SHARED_KEY_ERROR_IN_FILE.to_string());
         }
 
         if self.party_id == 0 {
-            return Err("Invalid party ID".to_string());
+            return Err(PARTY_ID_ERROR_IN_FILE.to_string());
         }
 
         if self.master_public_key.is_zero() {
-            return Err("Invalid master public key".to_string());
+            return Err(INVALID_MASTER_PUBLIC_KEY_IN_FILE.to_string());
         }
 
         // Validate vss_scheme_vec: A vector of vectors of GE elements
