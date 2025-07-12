@@ -24,6 +24,7 @@ use sha2::{Sha256, Digest};
 pub type Key = String;
 
 pub(crate) const MAX_FIRST_PRIMES: usize =  2_i64.pow(25) as usize;
+pub(crate) const MANAGER_ERROR_MESSAGE: &str = "Manager returned error";
 
 #[derive(Clone)]
 pub struct Client {
@@ -130,7 +131,7 @@ impl Client {
     fn generate_jwt(&self) -> String {
         let jwt_expiry_seconds = env::var(HTTP_AUTH_JWT_EXPIRY_VAR)
             .unwrap_or(HTTP_AUTH_JWT_EXPIRY_DEFAULT.to_string()).parse::<u64>().unwrap_or_else(|e| {
-            println!("Invalid value: {}", e);
+            println!("Invalid value for env var {}: {}. It must be an integer.", HTTP_AUTH_JWT_EXPIRY_VAR, e);
             exit(1);
         });
         let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
@@ -410,13 +411,13 @@ pub fn keygen_signup(client: &Client, params: &Params, curve_name: &str) -> (u16
                             (number, uuid)
                         },
                         Err(ManagerError { error }) => {
-                            println!("Manager returned error: {}", error);
+                            println!("{}: {}", MANAGER_ERROR_MESSAGE, error);
                             exit(1);
                         },
                     }
                 },
                 Err(error) => {
-                    println!("Manager returned error: {}", error);
+                    println!("{}: {}", MANAGER_ERROR_MESSAGE, error);
                     exit(1);
                 }
             }
@@ -486,7 +487,7 @@ pub fn signup(path: &str, client: &Client, params: &Params, room_id: String, par
             (party_signup, last_total_joined)
         },
         Err(ManagerError{error}) => {
-            eprintln!("Manager returned error: {}", error);
+            eprintln!("{}: {}", MANAGER_ERROR_MESSAGE, error);
             exit(1);
         }
     };

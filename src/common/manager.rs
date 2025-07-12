@@ -169,7 +169,7 @@ pub async fn run_manager() -> Result<Rocket<Ignite>, rocket::Error> {
                 .await
         }
         Err(error) => {
-            eprintln!("Error in parsing env var: {}, {}", TSS_CLI_MANAGER_TTL_VAR, error);
+            eprintln!("Error in parsing env var: {}, {}. It must be an integer.", TSS_CLI_MANAGER_TTL_VAR, error);
             exit(1);
         }
     }

@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use crate::common::{validate_hex_string, validate_vss_scheme_vector, Params};
 use crate::eddsa::signer::update_hd_derived_public_key;
 use crate::hd_keys;
+use crate::protocols::{INVALID_FRAGMENT_FILE_ERROR, INVALID_MESSAGE_STRING_ERROR};
 
 pub mod keygen;
 pub mod signer;
@@ -102,7 +103,7 @@ impl EdDSAParameters {
 pub fn sign(manager_address:String, key_file_path: String, params: Vec<&str>, message_str:String, path: &str)
             -> Value {
     if !validate_hex_string(message_str.as_str()) {
-        println!("Invalid message string.");
+        println!("{}", INVALID_MESSAGE_STRING_ERROR);
         exit(1);
     }
 
@@ -141,7 +142,7 @@ pub fn run_pubkey(keys_file_path:&str, path:&str) -> Value {
     } = match EdDSAParameters::read_from_file(keys_file_path.to_string()){
         Ok(params) => params,
         Err(error) => {
-            eprintln!("Error loading file: {}", error);
+            eprintln!("{}: {}", INVALID_FRAGMENT_FILE_ERROR, error);
             exit(1);
         },
     };

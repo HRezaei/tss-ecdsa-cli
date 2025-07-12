@@ -13,6 +13,7 @@ use sha2::{Sha512, Digest};
 use crate::common::{AEAD, aes_decrypt, aes_encrypt, AES_KEY_BYTES_LEN, broadcast, Client, hd_keys, Params, PartySignup, poll_for_broadcasts, poll_for_p2p, sendp2p, sha256_digest, signup};
 use crate::eddsa::{CURVE_NAME, FE, GE};
 use crate::protocols::eddsa::EdDSAParameters;
+use crate::protocols::INVALID_FRAGMENT_FILE_ERROR;
 
 //TODO Find a better approach to import and reuse run_signer() from multi-party-eddsa repo
 pub fn run_signer(manager_address:String, key_file_path: String, params: Params, message_str:String, path: &str)
@@ -38,7 +39,7 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
     } = match EdDSAParameters::read_from_file(key_file_path) {
         Ok(x) => x,
         Err(error) => {
-            eprintln!("Error loading file: {}", error);
+            eprintln!("{}: {}", INVALID_FRAGMENT_FILE_ERROR, error);
             exit(1);
         }
     };

@@ -8,6 +8,8 @@ use crate::eddsa::signer::exchange_data;
 pub mod ecdsa;
 pub mod eddsa;
 
+pub(crate) const INVALID_MESSAGE_STRING_ERROR: &str = "Invalid message string. It has to be a hex string with at least 32 characters.";
+pub(crate) const INVALID_FRAGMENT_FILE_ERROR: &str = "Error loading file";
 #[derive(Copy, PartialEq, Eq, Clone, Debug)]
 pub enum Error {
     InvalidKey

@@ -20,7 +20,7 @@ use curv::elliptic::curves::{Point, Scalar, Secp256k1};
 use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::{
     Keys, SharedKeys
 };
-
+use crate::protocols::{INVALID_FRAGMENT_FILE_ERROR, INVALID_MESSAGE_STRING_ERROR};
 
 //pub type Key = String;
 pub static CURVE_NAME: &str = "ECDSA";
@@ -135,7 +135,7 @@ pub fn run_pubkey_or_sign(
     } = match ECDSAParameters::read_from_file (keysfile_path.to_string()) {
         Ok(params) => {params}
         Err(error) => {
-            eprintln!("Error loading file: {}", error);
+            eprintln!("{}: {}", INVALID_FRAGMENT_FILE_ERROR, error);
             exit(1);
         }
     };
@@ -162,7 +162,7 @@ pub fn run_pubkey_or_sign(
     else {
 
         if !validate_hex_string(message_str) {
-            println!("Invalid message string.");
+            println!("{}", INVALID_MESSAGE_STRING_ERROR);
             exit(1);
         }
 
@@ -214,7 +214,7 @@ pub(crate) fn check_key_file(keysfile_path:&str, limit: usize) -> bool {
             failed
         }
         Err(error) => {
-            eprintln!("Error loading file: {}", error);
+            eprintln!("{}: {}", INVALID_FRAGMENT_FILE_ERROR, error);
             exit(1);
         }
     }

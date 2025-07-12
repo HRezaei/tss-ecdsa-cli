@@ -52,7 +52,7 @@ impl SigningRoom {
             .unwrap_or(SIGNUP_TIMEOUT_DEFAULT.to_string()).as_str()) {
             Ok(timeout) => {party.last_ping < now - timeout}
             Err(error) => {
-                eprintln!("Error in parsing var: {}, {}", SIGNUP_TIMEOUT_ENV, error);
+                eprintln!("Error in parsing env var: {}, {}. It must be an integer.", SIGNUP_TIMEOUT_ENV, error);
                 exit(1);
             }
         }

@@ -57,7 +57,7 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
 
     let pailiar_key_for_checking = bc_i.clone();
     if is_divisible_by_first_n_primes(pailiar_key_for_checking.e.n, MAX_FIRST_PRIMES) {
-        eprintln!("Error: unsafe pailiar key found!");
+        eprintln!("Error: unsafe pailiar key found! Try to run the script again.");
         exit(1);
     }
 
