@@ -18,6 +18,9 @@ pub(crate) const CHAIN_CODE_ERROR_IN_FILE:&str = "Invalid chain code in fragment
 pub(crate) const SHARED_KEY_ERROR_IN_FILE: &str = "Invalid shared keys in fragment file";
 pub(crate) const INVALID_MASTER_PUBLIC_KEY_IN_FILE: &str = "Invalid master public key in fragment file";
 
+pub enum HdImplementation { Bip32, Legacy }
+
+
 #[derive(Copy, PartialEq, Eq, Clone, Debug)]
 pub enum Error {
     InvalidKey

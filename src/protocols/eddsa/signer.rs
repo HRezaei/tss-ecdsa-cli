@@ -13,11 +13,16 @@ use sha2::{Sha512, Digest};
 use crate::common::{AEAD, aes_decrypt, aes_encrypt, AES_KEY_BYTES_LEN, broadcast, Client, hd_keys, Params, PartySignup, poll_for_broadcasts, poll_for_p2p, sendp2p, sha256_digest, signup};
 use crate::eddsa::{CURVE_NAME, FE, GE};
 use crate::protocols::eddsa::EdDSAParameters;
-use crate::protocols::INVALID_FRAGMENT_FILE_ERROR;
+use crate::protocols::{HdImplementation, INVALID_FRAGMENT_FILE_ERROR};
 
 //TODO Find a better approach to import and reuse run_signer() from multi-party-eddsa repo
-pub fn run_signer(manager_address:String, key_file_path: String, params: Params, message_str:String, path: &str)
-                  -> (Signature, GE) {
+pub fn run_signer(manager_address:String,
+    key_file_path: String,
+    params: Params,
+    message_str:String,
+    path: &str,
+    hd_variant: HdImplementation
+) -> (Signature, GE) {
     // This function is written inspired from the
     // test function: protocols::thresholdsig::test::tests::test_t2_n5_sign_with_4_internal()
     let message = match hex::decode(message_str.clone()) {
@@ -49,14 +54,25 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
     let (Y, f_l_new) = match path.is_empty() {
         true => (Y, FE::zero()),
         false => {
-            let chain_code = chain_code * GE::generator();
-            let (y_sum_child, f_l_new) = hd_keys::get_hd_key(
-                &Y,
-                path,
-                chain_code
-            );
+            match hd_variant {
+                HdImplementation::Legacy => {
+                    let chain_code = chain_code * GE::generator();
+                    let (y_sum_child, f_l_new, _derived_chain_code) = hd_keys::get_legacy_hd_key(
+                        &Y,
+                        path,
+                        chain_code
+                    );
 
-            (y_sum_child, f_l_new)
+                    (y_sum_child, f_l_new)
+                }
+                HdImplementation::Bip32 => {
+                    let chain_code_bytes = chain_code.to_bytes().to_vec();
+                    let (derived_child, tweak, _derived_chain_code)
+                        = hd_keys::get_hd_key_by_crate(Y, path, chain_code_bytes);
+                    let tweak_scaler = FE::from_bytes(tweak.as_slice()).unwrap();
+                    (derived_child, tweak_scaler)
+                }
+            }
         }
     };
 
@@ -194,6 +210,8 @@ fn update_signature(signature: &mut Signature, public_key: &Point<Ed25519>, mess
     signature.s = signature.s.clone() + f_l_new * add_to_sigma;
 }
 
+/*
+Based on the recommendation of Joo from Kudelski team, we no longer use this function:
 pub fn update_hd_derived_public_key(public_key: GE) -> GE {
     let eight = Scalar::<Ed25519>::from(8);
     let eight_inverse = eight.invert().unwrap();
@@ -202,6 +220,7 @@ pub fn update_hd_derived_public_key(public_key: GE) -> GE {
     // we decided to do this:
     (public_key * eight_inverse) * eight
 }
+ */
 
 pub fn eph_keygen_t_n_parties(
     client: Client,

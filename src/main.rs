@@ -11,21 +11,22 @@ extern crate serde_json;
 
 use clap::{App, AppSettings, Arg, SubCommand};
 
-use common::{manager, hd_keys};
+use common::{hd_keys, manager};
 
 use protocols::ecdsa;
 use protocols::eddsa;
 use crate::common::MAX_FIRST_PRIMES;
+use crate::protocols::HdImplementation;
 
 mod common;
 mod protocols;
+
 #[cfg(test)]
-mod test;
-mod test_ed25519;
+mod tests;
 
 fn main() {
     let matches = App::new("TSS CLI Utility")
-        .version("0.2.0")
+        .version("0.2.1")
         .author("Kaspars Sprogis <darklow@gmail.com>")
 //        .about("")
         .setting(AppSettings::SubcommandRequiredElseHelp)
@@ -51,6 +52,8 @@ fn main() {
                     .short("l")
                     .long("alg")
                     .takes_value(true)
+                    .possible_values(&["eddsa", "ecdsa"])
+                    .default_value("ecdsa")
                     .help("Either ecdsa (default) or eddsa")),
             SubCommand::with_name("pubkey").about("Get X,Y of a pub key")
                 .arg(Arg::with_name("keysfile")
@@ -67,12 +70,21 @@ fn main() {
                     .short("l")
                     .long("alg")
                     .takes_value(true)
+                    .possible_values(&["ecdsa", "eddsa"])
+                    .default_value("ecdsa")
                     .help("Either ecdsa (default) or eddsa"))
                 .arg(Arg::with_name("chain_code")
                     .short("c")
                     .long("cc")
                     .takes_value(true)
-                    .help("Hex representation of chain_code")),
+                    .help("Hex representation of chain_code"))
+                .arg(Arg::with_name("hd")
+                    .short("h")
+                    .long("hd")
+                    .takes_value(true)
+                    .default_value("legacy")
+                    .possible_values(&["legacy", "bip32"])
+                    .help("HD key derivation variant.")),
             SubCommand::with_name("sign").about("Run signer")
                 .arg(Arg::with_name("keysfile")
                     .required(true)
@@ -98,6 +110,8 @@ fn main() {
                     .short("l")
                     .long("alg")
                     .takes_value(true)
+                    .possible_values(&["ecdsa", "eddsa"])
+                    .default_value("ecdsa")
                     .help("Either ecdsa (default) or eddsa"))
                 .arg(Arg::with_name("manager_addr")
                     .short("a")
@@ -108,7 +122,14 @@ fn main() {
                     .short("c")
                     .long("cc")
                     .takes_value(true)
-                    .help("Hex representation of chain_code")),
+                    .help("Hex representation of chain_code"))
+                .arg(Arg::with_name("hd")
+                    .short("h")
+                    .long("hd")
+                    .takes_value(true)
+                    .default_value("legacy")
+                    .possible_values(&["legacy", "bip32"])
+                    .help("HD key derivation variant.")),
             SubCommand::with_name("convert_curv_07_to_09").about("Convert format of store files from v0.1.0 to v0.2.0")
                 .arg(Arg::with_name("input_file")
                     .required(true)
@@ -140,6 +161,7 @@ fn main() {
             let path = sub_matches.value_of("path").unwrap_or("");
             let message_str = sub_matches.value_of("message").unwrap_or("");
             let curve = sub_matches.value_of("algorithm").unwrap_or("ecdsa");
+            let hd_variant = sub_matches.value_of("hd").unwrap_or("bip32");
 
             let manager_addr = sub_matches
                 .value_of("manager_addr")
@@ -153,10 +175,38 @@ fn main() {
                 .collect();
             let action = matches.subcommand_name().unwrap();
             let result = match curve {
-                "ecdsa" => ecdsa::run_pubkey_or_sign(action, keysfile_path, path, message_str, manager_addr, params),
+                "ecdsa" => ecdsa::run_pubkey_or_sign(
+                    action,
+                    keysfile_path,
+                    path,
+                    message_str,
+                    manager_addr,
+                    params,
+                    match hd_variant {
+                        "legacy" => HdImplementation::Legacy,
+                        _ => HdImplementation::Bip32,
+                    },
+                ),
                 "eddsa" => match action {
-                    "sign" => eddsa::sign(manager_addr, keysfile_path.to_string(), params, message_str.to_string(), path),
-                    "pubkey" => eddsa::run_pubkey(keysfile_path, path),
+                    "sign" => eddsa::sign(
+                        manager_addr,
+                        keysfile_path.to_string(),
+                        params,
+                        message_str.to_string(),
+                        path,
+                        match hd_variant {
+                            "legacy" => HdImplementation::Legacy,
+                            _ => HdImplementation::Bip32,
+                        },
+                    ),
+                    "pubkey" => eddsa::run_pubkey(
+                        keysfile_path,
+                        path,
+                        match hd_variant {
+                            "legacy" => HdImplementation::Legacy,
+                            _ => HdImplementation::Bip32,
+                        },
+                    ),
                     _ => serde_json::Value::String("".to_string())
                 }
                 _ => serde_json::Value::String("".to_string())

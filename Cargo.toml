@@ -1,6 +1,6 @@
 [package]
 name = "tss-cli"
-version = "0.2.0"
+version = "0.2.1"
 authors = [
     "Kaspars Sprogis <darklow@gmail.com>"
 ]
@@ -33,8 +33,11 @@ bip32 = "0.5.3"
 hdwallet = "0.4.1"
 coins-bip32 = "0.12.0"
 bitcoin = "0.31"
-ed25519-bip32 = "0.4.1"
 ed25519-bip32-core = "0.1.1"
+
+[dependencies.ed25519-bip32]
+git = "https://github.com/HRezaei/rust-ed25519-bip32"
+branch = "feature/expose_tweak"
 
 [dependencies.paillier]
 version = "0.4.2"

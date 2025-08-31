@@ -99,6 +99,7 @@ OPTIONS:
     -p, --path <path>    Derivation path
     -l, --alg <algorithm>    Either ecdsa (default) or eddsa
     -c, --cc <chain_code>    Hex representation of chain_code
+    -h, --hd <hd_implementation> Either legacy (default) or bip32 which uses crates for HD (Hierarchical Deterministic) key derivation
 ARGS:
     <keysfile>    Keys file
 
@@ -122,6 +123,7 @@ OPTIONS:
     -p, --path <path>            Derivation path
     -l, --alg <algorithm>        Either ecdsa (default) or eddsa
     -c, --cc <chain_code>        Hex representation of chain_code
+    -h, --hd <hd_implementation> Either legacy (default) or bip32 which uses crates for HD (Hierarchical Deterministic) key derivation
 ARGS:
     <keysfile>    Keys file
     <params>      Threshold params: threshold/parties (t+1/n). E.g. 1/3 for 2 of 3 schema. The parameter n must not be
