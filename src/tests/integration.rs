@@ -10,7 +10,7 @@ use rand::distr::Alphanumeric;
 use rand::Rng;
 use serde_json::Value;
 use crate::common::{sha256_digest, TSS_CLI_POLL_TIMEOUT_VAR};
-use crate::protocols::ecdsa::{FE, GE};
+use crate::protocols::ecdsa::{sum_of_fragment_files, FE, GE};
 use crate::tests::ecdsa::check_sig;
 
 const MANAGER_ADDRESS: &str = "127.0.0.1";
@@ -236,10 +236,7 @@ fn check_keygen_t_of_n(threshold: i32, n_parties: i32) {
 
     assert!(vector_all_the_same(&maps));
 
-    // Clean up
-    for i in keyfiles.iter() {
-        let _ = std::fs::remove_file(i);
-    }
+    clean_up_files(keyfiles);
 }
 
 fn check_sign_t_of_n_generate(threshold: i32, n_parties: i32) {
@@ -250,12 +247,15 @@ fn check_sign_t_of_n_generate(threshold: i32, n_parties: i32) {
 
     kill_manager(manager);
 
+    clean_up_files(keyfiles);
+}
+
+fn clean_up_files(keyfiles: Vec<String>) {
     // Clean up
     for i in keyfiles.iter() {
         let _ = std::fs::remove_file(i);
     }
 }
-
 
 /// Runs N commands in parallel threads, each taking a set of arguments.
 /// Returns a Vec of strings collected from stdout.
@@ -397,4 +397,22 @@ fn check_sign_t_of_n(threshold: i32, n_parties: i32, keyfiles: Vec<String>, mana
     let public_key = GE::from_coords(&x_bigint, &y_bigint).unwrap();
 
     check_sig(&r_scalar, &s_scalar, &msg_bigint, &public_key);
+}
+
+#[test]
+fn test_keys_summation() {
+    let (manager, keyfiles, _manager_url) =
+        prepare_manager_and_keys(1, 3);
+    kill_manager(manager);
+
+    match sum_of_fragment_files(keyfiles.clone()) {
+        Ok((summation_pub_key, files_pub_key)) => {
+            assert_eq!(summation_pub_key, files_pub_key);
+        }
+        Err(error) => {
+            assert!(false, "Error in summing keys: {}", error);
+        }
+    }
+
+    clean_up_files(keyfiles);
 }

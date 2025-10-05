@@ -230,3 +230,30 @@ pub(crate) fn check_key_file(keysfile_path:&str, limit: usize) -> bool {
         }
     }
 }
+
+pub(crate) fn sum_of_fragment_files(keyfiles: Vec<String>) -> Result<(GE, GE), String> {
+    let mut sum_u_s = Scalar::<Secp256k1>::zero();
+    let mut master_y = Point::<Secp256k1>::zero();
+    for key_file_path in keyfiles.iter() {
+        let ECDSAParameters {
+            party_key: party_keys,
+            chain_code: _,
+            shared_keys: _,
+            party_id: _,
+            vss_scheme_vec: _,
+            paillier_key_vec: _,
+            master_public_key: Y
+        } = match ECDSAParameters::read_from_file(key_file_path.clone()) {
+            Ok(x) => x,
+            Err(error) => {
+                eprintln!("{}: {}", INVALID_FRAGMENT_FILE_ERROR, error);
+                return Err(error);
+            }
+        };
+        sum_u_s = sum_u_s + party_keys.u_i;
+        master_y = Y;
+    }
+    // sum_u_s is actually the master private key:
+    let summation_pub_key = sum_u_s.clone() * Point::generator();
+    Ok((summation_pub_key, master_y))
+}
