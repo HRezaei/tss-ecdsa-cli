@@ -26,7 +26,7 @@ pub type Key = String;
 pub(crate) const MAX_FIRST_PRIMES: usize =  2_i64.pow(25) as usize;
 pub(crate) const MANAGER_ERROR_MESSAGE: &str = "Manager returned error";
 const INVALID_KEY_LEN_ERROR: &str = "Key length is invalid!";
-const TSS_CLI_POLL_TIMEOUT_VAR: &str = "TSS_CLI_POLL_TIMEOUT";
+pub const TSS_CLI_POLL_TIMEOUT_VAR: &str = "TSS_CLI_POLL_TIMEOUT";
 const TSS_CLI_POLL_TIMEOUT_DEFAULT: u64 = 30;
 
 #[derive(Clone)]
