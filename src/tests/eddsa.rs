@@ -8,7 +8,8 @@ use curv::elliptic::curves::{Ed25519, Point, Scalar};
 use crate::common::hd_keys;
 use crate::common::hd_keys::{get_legacy_hd_key};
 use multi_party_eddsa::protocols::Signature as ZengoSignature;
-use crate::protocols::eddsa::{create_public_key_ed25519_bip32};
+use crate::protocols::eddsa::create_public_key_ed25519_bip32;
+
 
 type GE = Point<Ed25519>;
 type FE = Scalar<Ed25519>;
@@ -155,8 +156,15 @@ fn test_pub_key_conversions() {
     let pub_key_y_hex = "ca38ae292957383c4e7ebe7be3e7f7cbe5caa565d3ed3e4791d745e6c2ace6d1";
     let chain_code_hex = "356a30825dc73b104e4fa65d3e39304705a9f0c1329862bf545cd0bd61cf9908";
 
-    let signature_r_bytes = hex::decode(signature_r_hex).unwrap();
-    let signature_s_bytes = hex::decode(signature_s_hex).unwrap();
+    // This check is just to make sure the above conversions are done correctly:
+    verify_signature(
+        signature_r_hex.to_string(),
+        signature_s_hex.to_string(),
+        message_hex.to_string(),
+        pub_key_x_hex.to_string(),
+        pub_key_y_hex.to_string()
+    );
+
     let message_bytes = hex::decode(message_hex).unwrap();
     let pub_key_x_bigint = BigInt::from_str_radix(pub_key_x_hex, 16).unwrap();
     let pub_key_y_bigint = BigInt::from_str_radix(pub_key_y_hex, 16).unwrap();
@@ -165,13 +173,8 @@ fn test_pub_key_conversions() {
         &pub_key_y_bigint
     ).unwrap();
 
-    let zengo_signature: ZengoSignature = ZengoSignature {
-        R: Point::from_bytes(signature_r_bytes.as_slice()).unwrap(),
-        s: Scalar::from_bytes(signature_s_bytes.as_slice()).unwrap(),
-    };
-    // This check is just to make sure the above conversions are done correctly:
-    assert!(zengo_signature.verify(&message_bytes, &zengo_pub_key).is_ok());
-
+    let signature_r_bytes = hex::decode(signature_r_hex).unwrap();
+    let signature_s_bytes = hex::decode(signature_s_hex).unwrap();
     let mut sig_bytes = [0u8; 64];
     sig_bytes[..32].copy_from_slice(&signature_r_bytes);
     sig_bytes[32..].copy_from_slice(&signature_s_bytes);
@@ -251,3 +254,76 @@ fn test_hd_derivations() {
     */
 }
 
+pub fn verify_signature(
+    signature_r_hex: String,
+    signature_s_hex: String,
+    message_hex: String,
+    pub_key_x_hex: String,
+    pub_key_y_hex: String
+) {
+    let signature_r_bytes = hex::decode(signature_r_hex).unwrap();
+    let signature_s_bytes = hex::decode(signature_s_hex).unwrap();
+    let message_bytes = hex::decode(message_hex).unwrap();
+    let pub_key_x_bigint = BigInt::from_str_radix(pub_key_x_hex.as_str(), 16).unwrap();
+    let pub_key_y_bigint = BigInt::from_str_radix(pub_key_y_hex.as_str(), 16).unwrap();
+    let zengo_pub_key = Point::<Ed25519>::from_coords(
+        &pub_key_x_bigint,
+        &pub_key_y_bigint
+    ).unwrap();
+
+    let signature = ZengoSignature {
+        R: Point::from_bytes(signature_r_bytes.as_slice()).unwrap(),
+        s: Scalar::from_bytes(signature_s_bytes.as_slice()).unwrap(),
+    };
+
+    assert!(signature.verify(&message_bytes, &zengo_pub_key).is_ok());
+}
+
+#[cfg(test)]
+pub mod integration {
+    use crate::protocols::eddsa::sum_of_fragment_files;
+    use crate::tests::integration::{check_keygen_t_of_n, check_sign_t_of_n_generate, prepare_manager_and_keys};
+    use crate::tests::{kill_manager, DKGSignScheme, TestGuard};
+    #[test]
+    fn test_keygen_2_of_5() {
+        check_keygen_t_of_n(2, 5, DKGSignScheme::EdDSA);
+    }
+
+    #[test]
+    fn test_keygen_1_of_3() {
+        check_keygen_t_of_n(1, 3, DKGSignScheme::EdDSA);
+    }
+
+    #[test]
+    fn test_sign_1_of_3() {
+        check_sign_t_of_n_generate(1, 3, DKGSignScheme::EdDSA);
+    }
+
+    #[test]
+    fn test_sign_2_of_5() {
+        check_sign_t_of_n_generate(2, 5, DKGSignScheme::EdDSA);
+    }
+
+    #[test]
+    fn test_keys_summation() {
+        match prepare_manager_and_keys(1, 3, DKGSignScheme::EdDSA) {
+            Some((manager, keyfiles, _manager_url)) => {
+                kill_manager(manager);
+
+                let _clean_up = TestGuard {
+                    keyfiles: keyfiles.clone(),
+                    manager: None
+                };
+                match sum_of_fragment_files(keyfiles) {
+                    Ok((summation_pub_key, files_pub_key)) => {
+                        assert_eq!(summation_pub_key, files_pub_key);
+                    }
+                    Err(error) => {
+                        assert!(false, "Error in summing keys: {}", error);
+                    }
+                }
+            }
+            None => assert!(false, "Failed to prepare manager and key files.")
+        }
+    }
+}

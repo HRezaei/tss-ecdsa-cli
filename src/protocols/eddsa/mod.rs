@@ -200,3 +200,29 @@ pub fn create_public_key_ed25519_bip32(pub_key: GE, chain_code: Vec<u8>) -> ed25
 
     ed25519_bip32::XPub::from_pk_and_chaincode(&master_pub_key_bytes, &master_chain_code_bytes)
 }
+
+pub(crate) fn sum_of_fragment_files(keyfiles: Vec<String>) -> Result<(GE, GE), String> {
+    let mut sum_u_s = Scalar::<Ed25519>::zero();
+    let mut master_y = Point::<Ed25519>::zero();
+    for key_file_path in keyfiles.iter() {
+        let EdDSAParameters {
+            party_key: party_keys,
+            chain_code: _,
+            shared_keys: _,
+            party_id: _,
+            vss_scheme_vec: _,
+            master_public_key: Y
+        } = match EdDSAParameters::read_from_file(key_file_path.clone()) {
+            Ok(x) => x,
+            Err(error) => {
+                eprintln!("{}: {}", INVALID_FRAGMENT_FILE_ERROR, error);
+                return Err(error);
+            }
+        };
+        sum_u_s = sum_u_s + party_keys.keypair.expanded_private_key.private_key;
+        master_y = Y;
+    }
+    // sum_u_s is actually the master private key:
+    let summation_pub_key = sum_u_s.clone() * Point::generator();
+    Ok((summation_pub_key, master_y))
+}

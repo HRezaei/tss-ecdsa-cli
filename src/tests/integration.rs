@@ -1,63 +1,22 @@
-use std::{process::Command, thread, time::Duration};
+use std::{fs, process::Command, thread, time::Duration};
 use std::collections::HashMap;
+use std::fs::File;
 use std::net::TcpStream;
-use std::process::Child;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::process::{Child, Stdio};
 use std::sync::mpsc;
-use curv::arithmetic::Converter;
-use curv::BigInt;
 use rand::distr::Alphanumeric;
 use rand::Rng;
+use std::option::Option;
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::Value;
 use crate::common::{sha256_digest, TSS_CLI_POLL_TIMEOUT_VAR};
-use crate::protocols::ecdsa::{sum_of_fragment_files, FE, GE};
-use crate::tests::ecdsa::check_sig;
+use crate::tests::{ecdsa, get_cli_executable_path, get_next_manager_port, kill_manager, parse_sign_output, vector_all_the_same, DKGSignScheme, TestGuard};
+use crate::tests::eddsa;
 
 const MANAGER_ADDRESS: &str = "127.0.0.1";
-const MANAGER_PORT: u16 = 8000;
+pub(crate) const MANAGER_PORT: u16 = 8000;
 
-
-// Rust runs tests in parallel. We want to prevent separate tests from using the same port:
-static MANAGER_PORT_COUNTER: AtomicUsize = AtomicUsize::new(MANAGER_PORT as usize);
-
-fn get_next_manager_port() -> usize {
-    MANAGER_PORT_COUNTER.fetch_add(1, Ordering::SeqCst)
-}
-
-fn get_cli_executable_path() -> String {
-    if cfg!(debug_assertions) {
-        println!("DEBUGDEBUG");
-        "./target/debug/tss_cli".to_string()
-    } else {
-        println!("RELEASERELEASE");
-        "./target/release/tss_cli".to_string()
-    }
-}
-
-
-#[test]
-fn test_keygen_2_of_5() {
-    check_keygen_t_of_n(2, 5);
-}
-
-#[test]
-fn test_keygen_1_of_3() {
-    check_keygen_t_of_n(1, 3);
-}
-
-#[test]
-fn test_sign_1_of_3() {
-    check_sign_t_of_n_generate(1, 3);
-}
-
-#[test]
-fn test_sign_2_of_5() {
-    check_sign_t_of_n_generate(2, 5);
-}
-
-fn vector_all_the_same<E: PartialEq>(vector: &Vec<E>) -> bool {
-    vector.iter().all(|x| x == &vector[0])
-}
 
 fn _prepare_manager_no_retry(manager_addr: &str, manager_port: u16) -> (Child, String) {
     let manager_url = format!("http://{}:{}", manager_addr, manager_port);
@@ -77,9 +36,12 @@ fn _prepare_manager_no_retry(manager_addr: &str, manager_port: u16) -> (Child, S
 }
 
 /// Attempts to start the manager, retrying with incremented ports if the initial port is in use.
-fn prepare_manager(manager_addr: &str) -> (Child, String) {
+fn prepare_manager(manager_addr: &str) -> (Child, String, PathBuf) {
     const MAX_ATTEMPTS: u16 = 100;
     let mut last_tried_port = 0;
+    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)
+        .expect("Time went backwards").as_secs().to_string();
+
     for _ in 0..MAX_ATTEMPTS {
         let port = get_next_manager_port();
         last_tried_port = port;
@@ -91,16 +53,31 @@ fn prepare_manager(manager_addr: &str) -> (Child, String) {
             continue;
         }
 
+        // 1. Build the output directory path
+        let mut output_dir = PathBuf::from("/tmp");
+        output_dir.push(manager_addr.to_string() + timestamp.clone().as_str());
+        output_dir.push(port.to_string());
+
+        // 2. Create the directory if it doesn't exist
+        fs::create_dir_all(&output_dir).unwrap();
+
+        // 3. Create the output file
+        let output_file_path = output_dir.join("output.log");
+        let output_file = File::create(&output_file_path).unwrap();
+        let error_file_path = output_dir.join("error.log");
+        let error_file = File::create(&error_file_path).unwrap();
         // Attempt to spawn the manager process
         match Command::new(get_cli_executable_path())
             .arg("manager")
             .env("ROCKET_ADDRESS", manager_addr)
             .env("ROCKET_PORT", port.to_string())
+            .stdout(Stdio::from(output_file))
+            .stderr(Stdio::from(error_file))
             .spawn()
         {
             Ok(manager) => {
                 thread::sleep(Duration::from_secs(3)); // Allow time to start
-                return (manager, manager_url);
+                return (manager, manager_url, output_dir);
             }
             Err(e) => {
                 eprintln!("Failed to start manager on port {}: {}", port, e);
@@ -116,16 +93,9 @@ fn prepare_manager(manager_addr: &str) -> (Child, String) {
     );
 }
 
-fn kill_manager(mut manager: Child) {
-    // Kill manager
-    let _ = manager.kill();
-    let _ = manager.wait();
 
-    //Wait for killing:
-    thread::sleep(Duration::from_secs(2));
-}
-
-fn prepare_manager_and_keys(threshold: i32, n_parties: i32) -> (Child, Vec<String>, String) {
+pub(crate) fn prepare_manager_and_keys(threshold: i32, n_parties: i32, algorithm: DKGSignScheme)
+                                       -> Option<(Child, Vec<String>, String)> {
     // Generate a random 8-character alphanumeric string
     let random_str: String = rand::rng()
         .sample_iter(&Alphanumeric)
@@ -133,12 +103,17 @@ fn prepare_manager_and_keys(threshold: i32, n_parties: i32) -> (Child, Vec<Strin
         .map(char::from)
         .collect();
 
-    let keyfile_prefix = "/tmp/ec-key-".to_string() + &random_str + "-";
+    let curve_prefix = match algorithm {
+        DKGSignScheme::ECDSA => "ecdsa",
+        DKGSignScheme::EdDSA => "eddsa"
+    };
+    let key_name = curve_prefix.to_string() + "-key-" + &random_str;
+    let keyfile_prefix = "/tmp/".to_string() + key_name.clone().as_str() + "-";
     let keyfile_extension = ".json";
     let mut keyfiles = Vec::new();
 
     // Start the manager
-    let (manager, manager_url) = prepare_manager(MANAGER_ADDRESS);
+    let (manager, manager_url, manager_output_dir) = prepare_manager(MANAGER_ADDRESS);
 
     let params = format!("{}/{}", threshold, n_parties);
 
@@ -149,6 +124,12 @@ fn prepare_manager_and_keys(threshold: i32, n_parties: i32) -> (Child, Vec<Strin
         let params = params.clone();
         let keyfile = format!("{}{}{}", keyfile_prefix, i, keyfile_extension);
         keyfiles.push(keyfile.clone());
+
+        let output_file_path = manager_output_dir.join(key_name.clone() + i.to_string().as_str() + "_keygen_output.log");
+        let output_file = File::create(&output_file_path).unwrap();
+        let error_file_path = manager_output_dir.join(key_name.clone() + i.to_string().as_str() + "_keygen_error.log");
+        let error_file = File::create(&error_file_path).unwrap();
+
         let handle = thread::spawn(move || {
             let status = Command::new(get_cli_executable_path())
                 .arg("keygen")
@@ -156,27 +137,37 @@ fn prepare_manager_and_keys(threshold: i32, n_parties: i32) -> (Child, Vec<Strin
                 .arg(&params)
                 .arg("-a")
                 .arg(&manager_url)
+                .arg("-l")
+                .arg(curve_prefix)
                 .env(TSS_CLI_POLL_TIMEOUT_VAR, "100")
+                .stdout(Stdio::from(output_file))
+                .stderr(Stdio::from(error_file))
                 .status()
                 .expect("Failed to run keygen");
 
-            assert!(status.success(), "Keygen for party {} failed", i);
+            assert!(status.success(), "Keygen for party {} failed. Manager: {}, Keyfile: {}",
+                    i, manager_url, keyfile);
         });
 
         handles.push(handle);
         thread::sleep(Duration::from_millis(10)); // avoid race
     }
-
     // Wait for all threads
     for handle in handles {
-        handle.join().expect("Thread panicked");
+        match handle.join() {
+            Ok(_) => { /* continue */ }
+            Err(_) => {
+                eprintln!("Thread panicked. Manager: {}", manager_url);
+                kill_manager(manager);
+                return None;
+            }
+        }
     }
 
-    (manager, keyfiles, manager_url)
+    Some((manager, keyfiles, manager_url))
 }
 
 fn run_pubkey_command(keyfile: &str, args: Vec<&str>) -> Result<HashMap<String, String>, String> {
-    // Run the command
     let output = Command::new(get_cli_executable_path())
         .arg("pubkey")
         .arg(keyfile)
@@ -199,7 +190,7 @@ fn run_pubkey_command(keyfile: &str, args: Vec<&str>) -> Result<HashMap<String, 
                         .filter_map(|&key| obj.get(key).map(|v| (key.to_string(), v.to_string())))
                         .collect::<HashMap<String, String>>()
                 }).unwrap();
-                println!("Output of pubkey command on {}:\n{}", keyfile, serde_json::to_string_pretty(&json).unwrap());
+                //println!("Output of pubkey command on {}:\n{}", keyfile, serde_json::to_string_pretty(&json).unwrap());
                 Ok(map_opt)
             }
             Err(e) => {
@@ -209,7 +200,6 @@ fn run_pubkey_command(keyfile: &str, args: Vec<&str>) -> Result<HashMap<String, 
             }
         }
     } else {
-        // Print stderr if the command failed
         let stderr = str::from_utf8(&output.stderr)
             .unwrap_or("Could not decode output of pubkey command");
         eprintln!("Command failed:\n{}", stderr);
@@ -217,45 +207,51 @@ fn run_pubkey_command(keyfile: &str, args: Vec<&str>) -> Result<HashMap<String, 
     }
 }
 
-fn check_keygen_t_of_n(threshold: i32, n_parties: i32) {
+pub fn check_keygen_t_of_n(threshold: i32, n_parties: i32, algorithm: DKGSignScheme) {
 
-    let (mut manager, keyfiles, _manager_url) =
-        prepare_manager_and_keys(threshold, n_parties);
+    if let Some((mut manager, keyfiles, _manager_url)) =
+        prepare_manager_and_keys(threshold, n_parties, algorithm.clone()) {
+        let _ = manager.kill();
+        let _ = manager.wait();
 
-    // Kill manager
-    let _ = manager.kill();
-    let _ = manager.wait();
+        let algorithm_arg = match algorithm {
+            DKGSignScheme::ECDSA => {"-lecdsa"}
+            DKGSignScheme::EdDSA => {"-leddsa"}
+        };
+        let arguments = vec!["-p0/1/2", "-hlegacy", algorithm_arg];
+        let mut maps: Vec<HashMap<String, String>> = vec![];
+        for i in keyfiles.iter() {
+            let output = run_pubkey_command(i, arguments.clone());
+            assert!(output.is_ok());
+            maps.push(output.unwrap());
+        }
 
-    let arguments = vec!["-p0/1/2", "-hlegacy"];
-    let mut maps: Vec<HashMap<String, String>> = vec![];
-    for i in keyfiles.iter() {
-        let output = run_pubkey_command(i, arguments.clone());
-        assert!(output.is_ok());
-        maps.push(output.unwrap());
+        let _cleanup = TestGuard {
+            keyfiles,
+            manager: None,
+        };
+
+        assert!(vector_all_the_same(&maps));
     }
-
-    assert!(vector_all_the_same(&maps));
-
-    clean_up_files(keyfiles);
+    else {
+        assert!(false, "Failed to prepare manager and key files.")
+    };
 }
 
-fn check_sign_t_of_n_generate(threshold: i32, n_parties: i32) {
-    let (manager, keyfiles, manager_url) =
-        prepare_manager_and_keys(threshold, n_parties);
+pub fn check_sign_t_of_n_generate(threshold: i32, n_parties: i32, algorithm: DKGSignScheme) {
+    match prepare_manager_and_keys(threshold, n_parties, algorithm.clone()) {
+        Some((manager, keyfiles, manager_url)) => {
+            let _cleanup = TestGuard {
+                keyfiles: keyfiles.clone(),
+                manager: Some((manager, manager_url.clone())),
+            };
 
-    check_sign_t_of_n(threshold, n_parties, keyfiles.clone(), manager_url);
-
-    kill_manager(manager);
-
-    clean_up_files(keyfiles);
-}
-
-fn clean_up_files(keyfiles: Vec<String>) {
-    // Clean up
-    for i in keyfiles.iter() {
-        let _ = std::fs::remove_file(i);
+            check_sign_t_of_n(threshold, n_parties, keyfiles, manager_url, algorithm);
+        }
+        None => assert!(false, "Failed to prepare manager and key files."),
     }
 }
+
 
 /// Runs N commands in parallel threads, each taking a set of arguments.
 /// Returns a Vec of strings collected from stdout.
@@ -312,42 +308,19 @@ pub fn run_commands_in_parallel(
     Ok(results)
 }
 
-fn parse_sign_output(response: String) -> Result<HashMap<String, String>, String> {
-    let last_line = response.lines().last().unwrap();
-    // Try parsing it as JSON
-    match serde_json::from_str::<Value>(last_line) {
-        Ok(json) => {
-            let required_keys = ["x", "y", "msg_int", "r", "s", "status"];
-            let map_out = json.as_object().map(|obj| {
-                required_keys.iter()
-                    //.filter_map(|&key| obj.get(key).map(|v| (key.to_string(), v.to_string())))
-                    .filter_map(|&key| {
-                        obj.get(key).map(|v| {
-                            let val = if let Some(s) = v.as_str() {
-                                s.to_string()
-                            } else {
-                                v.to_string() // fallback to JSON serialization
-                            };
-                            (key.to_string(), val)
-                        })
-                    })
-                    .collect::<HashMap<String, String>>()
-            }).unwrap();
-            //println!("Sign Output:\n{}", serde_json::to_string_pretty(&json).unwrap());
-            Ok(map_out)
-        }
-        Err(e) => {
-            eprintln!("Failed to parse JSON: {}", e);
-            println!("Raw output:\n{}", response);
-            Err(e.to_string())
-        }
-    }
-
-}
-
-fn check_sign_t_of_n(threshold: i32, n_parties: i32, keyfiles: Vec<String>, manager_url: String) {
+fn check_sign_t_of_n(
+    threshold: i32,
+    n_parties: i32,
+    keyfiles: Vec<String>,
+    manager_url: String,
+    algorithm: DKGSignScheme,
+) {
     let message = "hello world";
     let message_hash = sha256_digest(message.as_bytes());
+    let curve_prefix = match algorithm {
+        DKGSignScheme::ECDSA => "ecdsa",
+        DKGSignScheme::EdDSA => "eddsa"
+    };
 
     let setup_str = format!("{}/{}", threshold, n_parties);
     let mut commands: Vec<Vec<String>> = Vec::new();
@@ -361,6 +334,8 @@ fn check_sign_t_of_n(threshold: i32, n_parties: i32, keyfiles: Vec<String>, mana
             "-hlegacy".to_string(),
             "-a".to_string(),
             manager_url.clone(),
+            "-l".to_string(),
+            curve_prefix.to_string(),
         ];
 
         commands.push(arguments);
@@ -381,38 +356,16 @@ fn check_sign_t_of_n(threshold: i32, n_parties: i32, keyfiles: Vec<String>, mana
     }
 
     assert!(vector_all_the_same(&r_vector));
+    assert!(vector_all_the_same(&s_vector));
 
-    let r_bytes = hex::decode(one_output.get("r").unwrap()).unwrap();
-    let r_scalar = FE::from_bytes(r_bytes.as_slice()).unwrap();
+    let r_hex = one_output.get("r").unwrap().to_string();
+    let s_hex = one_output.get("s").unwrap().to_string();
 
-    let s_bytes = hex::decode(one_output.get("s").unwrap()).unwrap();
-    let s_scalar = FE::from_bytes(s_bytes.as_slice()).unwrap();
+    let x_hex = one_output.get("x").unwrap().to_string();
+    let y_hex = one_output.get("y").unwrap().to_string();
 
-    let msg_bigint = BigInt::from_str_radix(message_hash.as_str(), 16).unwrap();
-
-    let x_hex = one_output.get("x").unwrap();
-    let y_hex = one_output.get("y").unwrap();
-    let x_bigint = BigInt::from_str_radix(x_hex, 16).unwrap();
-    let y_bigint = BigInt::from_str_radix(y_hex, 16).unwrap();
-    let public_key = GE::from_coords(&x_bigint, &y_bigint).unwrap();
-
-    check_sig(&r_scalar, &s_scalar, &msg_bigint, &public_key);
-}
-
-#[test]
-fn test_keys_summation() {
-    let (manager, keyfiles, _manager_url) =
-        prepare_manager_and_keys(1, 3);
-    kill_manager(manager);
-
-    match sum_of_fragment_files(keyfiles.clone()) {
-        Ok((summation_pub_key, files_pub_key)) => {
-            assert_eq!(summation_pub_key, files_pub_key);
-        }
-        Err(error) => {
-            assert!(false, "Error in summing keys: {}", error);
-        }
+    match algorithm {
+        DKGSignScheme::ECDSA => ecdsa::integration::verify_signature(r_hex, s_hex, message_hash, x_hex, y_hex),
+        DKGSignScheme::EdDSA => eddsa::verify_signature(r_hex, s_hex, message_hash, x_hex, y_hex)
     }
-
-    clean_up_files(keyfiles);
 }

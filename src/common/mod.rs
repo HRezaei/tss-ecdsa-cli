@@ -187,7 +187,6 @@ pub fn validate_vss_scheme_vector<E: Curve>(vss_scheme_vec: Vec<VerifiableSS<E>>
     Ok(true)
 }
 
-#[allow(dead_code)]
 pub fn aes_encrypt(key: &[u8], plaintext: &[u8]) -> Result<AEAD, String> {
     if key.len() != AES_KEY_BYTES_LEN {
         return Err(String::from(INVALID_KEY_LEN_ERROR));
@@ -209,7 +208,6 @@ pub fn aes_encrypt(key: &[u8], plaintext: &[u8]) -> Result<AEAD, String> {
     })
 }
 
-#[allow(dead_code)]
 pub fn aes_decrypt(key: &[u8], aead_pack: AEAD) -> Result<Vec<u8>, String> {
     if key.len() != AES_KEY_BYTES_LEN {
         return Err(String::from(INVALID_KEY_LEN_ERROR));

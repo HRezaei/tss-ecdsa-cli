@@ -20,7 +20,6 @@ pub(crate) const INVALID_MASTER_PUBLIC_KEY_IN_FILE: &str = "Invalid master publi
 
 pub enum HdImplementation { Bip32, Legacy }
 
-
 #[derive(Copy, PartialEq, Eq, Clone, Debug)]
 pub enum Error {
     InvalidKey

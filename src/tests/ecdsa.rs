@@ -1,6 +1,3 @@
-use curv::arithmetic::Converter;
-use curv::BigInt;
-use curv::elliptic::curves::{Point, Scalar, Secp256k1};
 
 #[cfg(test)]
 mod hd_derivation {
@@ -321,17 +318,19 @@ mod hd_derivation {
         println!("X = {}", x);
         println!("Y = {}", y);
         //###################################################
-        let t = master_pub_key.public_key.serialize();
-        println!("seed: {}", t.len());
-        let original_public_key: Point<Secp256k1> = Point::<Secp256k1>::from_bytes(t.as_slice()).unwrap();
+        let master_pub_key_bytes = master_pub_key.public_key.serialize();
+        let original_public_key: Point<Secp256k1> = Point::<Secp256k1>
+            ::from_bytes(master_pub_key_bytes.as_slice()).unwrap();
 
         println!("\nMaster public key coordinates in our lib:");
         println!("x: {:?}", original_public_key.x_coord().unwrap().to_hex());
         println!("y: {:?}", original_public_key.y_coord().unwrap().to_hex());
 
-        let chain_code_scalar = FE::from(1);
-        let chain_code_point = chain_code_scalar.clone() * Point::<Secp256k1>::generator().to_point();
-        println!("cc len: {:?}", &chain_code_point.to_bytes(true).len());
+        //let chain_code_scalar = FE::from(1);
+        //let chain_code_point = chain_code_scalar.clone() * Point::<Secp256k1>::generator().to_point();
+        //println!("cc len: {:?}", &chain_code_point.to_bytes(true).len());
+        // The above code prints 33 whilst bip32 spec defines chain_code as 32 bytes. This is one of
+        // the reasons why Trepca's HD differs from third party crates.
         let path = "0";
 
         let (bip32_child_x,
@@ -371,38 +370,111 @@ mod hd_derivation {
 }
 
 
-#[allow(dead_code)]
-pub fn check_sig(
-    r: &Scalar<Secp256k1>,
-    s: &Scalar<Secp256k1>,
-    msg: &BigInt,
-    pk: &Point<Secp256k1>,
-) {
-    use libsecp256k1::{verify, Message, PublicKey, PublicKeyFormat, Signature};
+#[cfg(test)]
+pub(crate) mod integration {
+    use curv::arithmetic::Converter;
+    use curv::BigInt;
+    use curv::elliptic::curves::{Point, Scalar, Secp256k1};
+    use crate::protocols::ecdsa::{sum_of_fragment_files, FE, GE};
+    use crate::tests::integration::{check_keygen_t_of_n, check_sign_t_of_n_generate, prepare_manager_and_keys};
+    use crate::tests::{kill_manager, DKGSignScheme, TestGuard};
+    pub fn check_sig(
+        r: &Scalar<Secp256k1>,
+        s: &Scalar<Secp256k1>,
+        msg: &BigInt,
+        pk: &Point<Secp256k1>,
+    ) {
+        use libsecp256k1::{verify, Message, PublicKey, PublicKeyFormat, Signature};
 
-    let raw_msg = BigInt::to_bytes(msg);
-    let mut msg: Vec<u8> = Vec::new(); // padding
-    msg.extend(vec![0u8; 32 - raw_msg.len()]);
-    msg.extend(raw_msg.iter());
+        let raw_msg = BigInt::to_bytes(msg);
+        let mut msg: Vec<u8> = Vec::new(); // padding
+        msg.extend(vec![0u8; 32 - raw_msg.len()]);
+        msg.extend(raw_msg.iter());
 
-    let msg = Message::parse_slice(msg.as_slice()).unwrap();
-    let mut raw_pk = pk.to_bytes(false).to_vec();
-    if raw_pk.len() == 64 {
-        raw_pk.insert(0, 4u8);
+        let msg = Message::parse_slice(msg.as_slice()).unwrap();
+        let mut raw_pk = pk.to_bytes(false).to_vec();
+        if raw_pk.len() == 64 {
+            raw_pk.insert(0, 4u8);
+        }
+        let pk = PublicKey::parse_slice(&raw_pk, Some(PublicKeyFormat::Full)).unwrap();
+
+        let mut compact: Vec<u8> = Vec::new();
+        let bytes_r = &r.to_bytes().to_vec();
+        compact.extend(vec![0u8; 32 - bytes_r.len()]);
+        compact.extend(bytes_r.iter());
+
+        let bytes_s = &s.to_bytes().to_vec();
+        compact.extend(vec![0u8; 32 - bytes_s.len()]);
+        compact.extend(bytes_s.iter());
+
+        let secp_sig = Signature::parse_standard_slice(compact.as_slice()).unwrap();
+
+        let is_correct = verify(&msg, &secp_sig, &pk);
+        assert!(is_correct);
     }
-    let pk = PublicKey::parse_slice(&raw_pk, Some(PublicKeyFormat::Full)).unwrap();
 
-    let mut compact: Vec<u8> = Vec::new();
-    let bytes_r = &r.to_bytes().to_vec();
-    compact.extend(vec![0u8; 32 - bytes_r.len()]);
-    compact.extend(bytes_r.iter());
+    pub fn verify_signature(
+        signature_r_hex: String,
+        signature_s_hex: String,
+        message_hex: String,
+        pub_key_x_hex: String,
+        pub_key_y_hex: String
+    ) {
+        let r_bytes = hex::decode(signature_r_hex).unwrap();
+        let r_scalar = FE::from_bytes(r_bytes.as_slice()).unwrap();
 
-    let bytes_s = &s.to_bytes().to_vec();
-    compact.extend(vec![0u8; 32 - bytes_s.len()]);
-    compact.extend(bytes_s.iter());
+        let s_bytes = hex::decode(signature_s_hex).unwrap();
+        let s_scalar = FE::from_bytes(s_bytes.as_slice()).unwrap();
 
-    let secp_sig = Signature::parse_standard_slice(compact.as_slice()).unwrap();
+        let msg_bigint = BigInt::from_str_radix(message_hex.as_str(), 16).unwrap();
 
-    let is_correct = verify(&msg, &secp_sig, &pk);
-    assert!(is_correct);
+        let x_bigint = BigInt::from_str_radix(pub_key_x_hex.as_str(), 16).unwrap();
+        let y_bigint = BigInt::from_str_radix(pub_key_y_hex.as_str(), 16).unwrap();
+        let public_key = GE::from_coords(&x_bigint, &y_bigint).unwrap();
+
+        check_sig(&r_scalar, &s_scalar, &msg_bigint, &public_key);
+    }
+
+    #[test]
+    fn test_keygen_2_of_5() {
+        check_keygen_t_of_n(2, 5, DKGSignScheme::ECDSA);
+    }
+
+    #[test]
+    fn test_keygen_1_of_3() {
+        check_keygen_t_of_n(1, 3, DKGSignScheme::ECDSA);
+    }
+
+    #[test]
+    fn test_sign_1_of_3() {
+        check_sign_t_of_n_generate(1, 3, DKGSignScheme::ECDSA);
+    }
+
+    #[test]
+    fn test_sign_2_of_5() {
+        check_sign_t_of_n_generate(2, 5, DKGSignScheme::ECDSA);
+    }
+
+    #[test]
+    fn test_keys_summation() {
+        match prepare_manager_and_keys(1, 3, DKGSignScheme::ECDSA) {
+            Some((manager, keyfiles, _manager_url)) => {
+                kill_manager(manager);
+
+                let _clean_up = TestGuard {
+                    keyfiles: keyfiles.clone(),
+                    manager: None
+                };
+                match sum_of_fragment_files(keyfiles) {
+                    Ok((summation_pub_key, files_pub_key)) => {
+                        assert_eq!(summation_pub_key, files_pub_key);
+                    }
+                    Err(error) => {
+                        assert!(false, "Error in summing keys: {}", error);
+                    }
+                }
+            }
+            None => assert!(false, "Failed to prepare manager and key files.")
+        }
+    }
 }
