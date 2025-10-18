@@ -281,9 +281,10 @@ pub fn verify_signature(
 
 #[cfg(test)]
 pub mod integration {
+    use crate::common::DKGSignScheme;
     use crate::protocols::eddsa::sum_of_fragment_files;
     use crate::tests::integration::{check_keygen_t_of_n, check_sign_t_of_n_generate, prepare_manager_and_keys};
-    use crate::tests::{kill_manager, DKGSignScheme, TestGuard};
+    use crate::tests::{kill_manager, TestResourcesCleanUp};
     #[test]
     fn test_keygen_2_of_5() {
         check_keygen_t_of_n(2, 5, DKGSignScheme::EdDSA);
@@ -310,12 +311,12 @@ pub mod integration {
             Some((manager, keyfiles, _manager_url)) => {
                 kill_manager(manager);
 
-                let _clean_up = TestGuard {
+                let _clean_up = TestResourcesCleanUp {
                     keyfiles: keyfiles.clone(),
                     manager: None
                 };
                 match sum_of_fragment_files(keyfiles) {
-                    Ok((summation_pub_key, files_pub_key)) => {
+                    Ok((summation_pub_key, files_pub_key, _)) => {
                         assert_eq!(summation_pub_key, files_pub_key);
                     }
                     Err(error) => {

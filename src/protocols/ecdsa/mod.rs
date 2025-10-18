@@ -44,29 +44,34 @@ impl ECDSAParameters {
         let data = fs::read_to_string(keys_file_path.clone()).expect(
             format!("Unable to load keys file at location: {}", keys_file_path).as_str(),
         );
-        let (party_key, chain_code, shared_keys, party_id, vss_scheme_vec, paillier_key_vec, master_public_key): (
-            Keys,
-            Scalar<Secp256k1>,
-            SharedKeys,
-            u16,
-            Vec<VerifiableSS<Secp256k1>>,
-            Vec<EncryptionKey>,
-            GE,
-        ) = serde_json::from_str(&data).unwrap();
+        match serde_json::from_str(&data) {
+            Ok(params) => {
+                let (party_key, chain_code, shared_keys, party_id, vss_scheme_vec, paillier_key_vec, master_public_key): (
+                    Keys,
+                    Scalar<Secp256k1>,
+                    SharedKeys,
+                    u16,
+                    Vec<VerifiableSS<Secp256k1>>,
+                    Vec<EncryptionKey>,
+                    GE,
+                ) = params;
 
-        let ecdsa_params = ECDSAParameters {
-            party_key,
-            chain_code,
-            shared_keys,
-            party_id,
-            vss_scheme_vec,
-            paillier_key_vec,
-            master_public_key,
-        };
+                let ecdsa_params = ECDSAParameters {
+                    party_key,
+                    chain_code,
+                    shared_keys,
+                    party_id,
+                    vss_scheme_vec,
+                    paillier_key_vec,
+                    master_public_key,
+                };
 
-        match ecdsa_params.validate() {
-            Ok(_valid) => Ok(ecdsa_params),
-            Err(e) => Err(e),
+                match ecdsa_params.validate() {
+                    Ok(_valid) => Ok(ecdsa_params),
+                    Err(e) => Err(e),
+                }
+            },
+            Err(error) => Err(error.to_string()),
         }
     }
 
@@ -231,7 +236,7 @@ pub(crate) fn check_key_file(keysfile_path:&str, limit: usize) -> bool {
     }
 }
 
-pub(crate) fn sum_of_fragment_files(keyfiles: Vec<String>) -> Result<(GE, GE), String> {
+pub(crate) fn sum_of_fragment_files(keyfiles: Vec<String>) -> Result<(GE, GE, FE), String> {
     let mut sum_u_s = Scalar::<Secp256k1>::zero();
     let mut master_y = Point::<Secp256k1>::zero();
     for key_file_path in keyfiles.iter() {
@@ -255,5 +260,5 @@ pub(crate) fn sum_of_fragment_files(keyfiles: Vec<String>) -> Result<(GE, GE), S
     }
     // sum_u_s is actually the master private key:
     let summation_pub_key = sum_u_s.clone() * Point::generator();
-    Ok((summation_pub_key, master_y))
+    Ok((summation_pub_key, master_y, sum_u_s))
 }

@@ -3,7 +3,8 @@ pub mod hd_keys;
 
 pub mod signing_room;
 
-use std::{env, thread, time};
+use std::{env, fs, thread, time};
+use std::path::Path;
 use std::time::{Instant, SystemTime, Duration};
 
 use aes_gcm::{Aes256Gcm, Nonce};
@@ -20,6 +21,9 @@ use rand::{rngs::OsRng, TryRngCore};
 use reqwest::header::{HeaderMap, AUTHORIZATION};
 use reqwest::StatusCode;
 use sha2::{Sha256, Digest};
+use crate::protocols::{ecdsa, eddsa};
+use crate::protocols::ecdsa::ECDSAParameters;
+use crate::protocols::eddsa::EdDSAParameters;
 
 pub type Key = String;
 
@@ -28,6 +32,9 @@ pub(crate) const MANAGER_ERROR_MESSAGE: &str = "Manager returned error";
 const INVALID_KEY_LEN_ERROR: &str = "Key length is invalid!";
 pub const TSS_CLI_POLL_TIMEOUT_VAR: &str = "TSS_CLI_POLL_TIMEOUT";
 const TSS_CLI_POLL_TIMEOUT_DEFAULT: u64 = 30;
+
+#[derive(Clone)]
+pub enum DKGSignScheme { ECDSA, EdDSA }
 
 #[derive(Clone)]
 pub struct Client {
@@ -535,4 +542,62 @@ pub(crate) fn is_divisible_by_first_n_primes(given_number: BigInt, limit_for_che
         }
     }
     failed // The given number is not divisible by any of the primes
+}
+
+pub(crate) fn export_keys(input_dir: String) -> String {
+    let (keyfiles, scheme) = detect_format_and_list_files(input_dir);
+    match scheme {
+        None => "Could not find any key files, or could not parse them".to_string(),
+        Some(DKGSignScheme::ECDSA) => {
+            println!("Detected ECDSA key files");
+            match ecdsa::sum_of_fragment_files(keyfiles) {
+                Ok((master_pubkey, file_master_pubkey, master_private_key)) => {
+                    assert_eq!(master_pubkey.to_bytes(true).to_vec(),
+                               file_master_pubkey.to_bytes(true).to_vec());
+                    hex::encode(master_private_key.to_bytes().to_vec())
+                }
+                Err(error) => {
+                    format!("Could not export key files. Error: {}", error)
+                }
+            }
+        }
+        Some(DKGSignScheme::EdDSA) => {
+            println!("Detected EdDSA key files");
+            match eddsa::sum_of_fragment_files(keyfiles) {
+                Ok((master_pubkey, file_master_pubkey, master_private_key)) => {
+                    assert_eq!(master_pubkey.to_bytes(true).to_vec(),
+                               file_master_pubkey.to_bytes(true).to_vec());
+                    hex::encode(master_private_key.to_bytes().to_vec())
+                }
+                Err(error) => {
+                    format!("Could not export key files. Error: {}", error)
+                }
+            }
+        }
+    }
+}
+
+fn detect_format_and_list_files<P: AsRef<Path>>(dir: P) -> (Vec<String>, Option<DKGSignScheme>) {
+    let mut files = Vec::new();
+    let mut detected: Option<DKGSignScheme> = None;
+
+    for entry in fs::read_dir(dir).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+
+        if path.is_file() {
+            files.push(path.to_string_lossy().to_string());
+        }
+    }
+
+    if files.len() > 0 {
+        let keyfile_path = files[0].to_string();
+        if let Ok(_a) = ECDSAParameters::read_from_file(keyfile_path.clone()) {
+            detected = Some(DKGSignScheme::ECDSA);
+        } else if let Ok(_b) = EdDSAParameters::read_from_file(keyfile_path) {
+            detected = Some(DKGSignScheme::EdDSA);
+        }
+    }
+
+    (files, detected)
 }

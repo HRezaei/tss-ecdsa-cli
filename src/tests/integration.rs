@@ -10,8 +10,8 @@ use std::option::Option;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::Value;
-use crate::common::{sha256_digest, TSS_CLI_POLL_TIMEOUT_VAR};
-use crate::tests::{ecdsa, get_cli_executable_path, get_next_manager_port, kill_manager, parse_sign_output, vector_all_the_same, DKGSignScheme, TestGuard};
+use crate::common::{sha256_digest, DKGSignScheme, TSS_CLI_POLL_TIMEOUT_VAR};
+use crate::tests::{ecdsa, get_cli_executable_path, get_next_manager_port, kill_manager, parse_sign_output, vector_all_the_same, TestResourcesCleanUp};
 use crate::tests::eddsa;
 
 const MANAGER_ADDRESS: &str = "127.0.0.1";
@@ -226,7 +226,7 @@ pub fn check_keygen_t_of_n(threshold: i32, n_parties: i32, algorithm: DKGSignSch
             maps.push(output.unwrap());
         }
 
-        let _cleanup = TestGuard {
+        let _cleanup = TestResourcesCleanUp {
             keyfiles,
             manager: None,
         };
@@ -241,7 +241,7 @@ pub fn check_keygen_t_of_n(threshold: i32, n_parties: i32, algorithm: DKGSignSch
 pub fn check_sign_t_of_n_generate(threshold: i32, n_parties: i32, algorithm: DKGSignScheme) {
     match prepare_manager_and_keys(threshold, n_parties, algorithm.clone()) {
         Some((manager, keyfiles, manager_url)) => {
-            let _cleanup = TestGuard {
+            let _cleanup = TestResourcesCleanUp {
                 keyfiles: keyfiles.clone(),
                 manager: Some((manager, manager_url.clone())),
             };

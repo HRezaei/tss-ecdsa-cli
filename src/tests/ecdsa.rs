@@ -375,9 +375,10 @@ pub(crate) mod integration {
     use curv::arithmetic::Converter;
     use curv::BigInt;
     use curv::elliptic::curves::{Point, Scalar, Secp256k1};
+    use crate::common::DKGSignScheme;
     use crate::protocols::ecdsa::{sum_of_fragment_files, FE, GE};
     use crate::tests::integration::{check_keygen_t_of_n, check_sign_t_of_n_generate, prepare_manager_and_keys};
-    use crate::tests::{kill_manager, DKGSignScheme, TestGuard};
+    use crate::tests::{kill_manager, TestResourcesCleanUp};
     pub fn check_sig(
         r: &Scalar<Secp256k1>,
         s: &Scalar<Secp256k1>,
@@ -461,12 +462,12 @@ pub(crate) mod integration {
             Some((manager, keyfiles, _manager_url)) => {
                 kill_manager(manager);
 
-                let _clean_up = TestGuard {
+                let _clean_up = TestResourcesCleanUp {
                     keyfiles: keyfiles.clone(),
                     manager: None
                 };
                 match sum_of_fragment_files(keyfiles) {
-                    Ok((summation_pub_key, files_pub_key)) => {
+                    Ok((summation_pub_key, files_pub_key, _)) => {
                         assert_eq!(summation_pub_key, files_pub_key);
                     }
                     Err(error) => {

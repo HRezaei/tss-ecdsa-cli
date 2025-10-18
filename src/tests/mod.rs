@@ -16,15 +16,12 @@ fn get_next_manager_port() -> usize {
     MANAGER_PORT_COUNTER.fetch_add(1, Ordering::SeqCst)
 }
 
-#[derive(Clone)]
-pub enum DKGSignScheme { ECDSA, EdDSA }
-
-struct TestGuard {
+struct TestResourcesCleanUp {
     keyfiles: Vec<String>,
     manager: Option<(Child, String)>
 }
 
-impl Drop for TestGuard {
+impl Drop for TestResourcesCleanUp {
     fn drop(&mut self) {
         println!("Running cleanup code...");
         if self.keyfiles.len() > 0 {

@@ -15,7 +15,7 @@ use common::{hd_keys, manager};
 
 use protocols::ecdsa;
 use protocols::eddsa;
-use crate::common::MAX_FIRST_PRIMES;
+use crate::common::{export_keys, MAX_FIRST_PRIMES};
 use crate::protocols::HdImplementation;
 
 mod common;
@@ -26,7 +26,7 @@ mod tests;
 
 fn main() {
     let matches = App::new("TSS CLI Utility")
-        .version("0.2.1")
+        .version("0.2.2")
         .author("Kaspars Sprogis <darklow@gmail.com>")
 //        .about("")
         .setting(AppSettings::SubcommandRequiredElseHelp)
@@ -141,6 +141,12 @@ fn main() {
                     .index(2)
                     .takes_value(true)
                     .help("Output keys file")),
+            SubCommand::with_name("export").about("Exports the key for recovery.")
+                .arg(Arg::with_name("input_dir")
+                    .required(true)
+                    .index(1)
+                    .takes_value(true)
+                    .help("Source directory containing key files.")),
             SubCommand::with_name("safety_check").about("Checks a given key file against first n primes")
                 .arg(Arg::with_name("input_file")
                     .required(true)
@@ -252,6 +258,13 @@ fn main() {
             else {
                 println!("Key file check successful!");
             }
+        }
+        ("export", Some(sub_matches)) => {
+            let source_dir = sub_matches.value_of("input_dir")
+                .unwrap_or("")
+                .to_string();
+            let result = export_keys(source_dir);
+            println!("{}", result);
         }
         _ => {}
     }
