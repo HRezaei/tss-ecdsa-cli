@@ -209,7 +209,6 @@ fn get(
             Json(Err(ManagerError{error: error_message(LOCKING_ERROR_MESSAGE, &error.to_string())}))
         }
     }
-
 }
 
 #[post("/set", format = "json", data = "<request>")]

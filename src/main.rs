@@ -9,6 +9,7 @@ extern crate paillier;
 extern crate reqwest;
 extern crate serde_json;
 
+use std::env;
 use clap::{App, AppSettings, Arg, SubCommand};
 
 use common::{hd_keys, manager};
@@ -161,6 +162,9 @@ fn main() {
         ])
         .get_matches();
 
+    let rocket_default_port = env::var("ROCKET_PORT").unwrap_or("8000".to_string());
+    let manager_default_address = "http://127.0.0.1:".to_string() + rocket_default_port.as_str();
+
     match matches.subcommand() {
         ("pubkey", Some(sub_matches)) | ("sign", Some(sub_matches)) => {
             let keysfile_path = sub_matches.value_of("keysfile").unwrap_or("");
@@ -171,7 +175,7 @@ fn main() {
 
             let manager_addr = sub_matches
                 .value_of("manager_addr")
-                .unwrap_or("http://127.0.0.1:8001")
+                .unwrap_or(manager_default_address.as_str())
                 .to_string();
             // Parse threshold params
             let params: Vec<&str> = sub_matches
@@ -225,7 +229,7 @@ fn main() {
         ("keygen", Some(sub_matches)) => {
             let addr = sub_matches
                 .value_of("manager_addr")
-                .unwrap_or("http://127.0.0.1:8001")
+                .unwrap_or(manager_default_address.as_str())
                 .to_string();
             let keysfile_path = sub_matches.value_of("keysfile").unwrap_or("").to_string();
             let curve = sub_matches.value_of("algorithm").unwrap_or("ecdsa");
