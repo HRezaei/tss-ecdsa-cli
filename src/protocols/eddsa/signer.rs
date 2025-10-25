@@ -68,7 +68,7 @@ pub fn run_signer(manager_address:String,
                 HdImplementation::Bip32 => {
                     let chain_code_bytes = chain_code.to_bytes().to_vec();
                     let (derived_child, tweak, _derived_chain_code)
-                        = hd_keys::get_hd_key_by_crate(Y, path, chain_code_bytes);
+                        = hd_keys::get_hd_child_by_crate(Y, path, chain_code_bytes);
                     let tweak_scaler = FE::from_bytes(tweak.as_slice()).unwrap();
                     (derived_child, tweak_scaler)
                 }

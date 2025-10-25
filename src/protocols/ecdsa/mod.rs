@@ -157,7 +157,14 @@ pub fn run_pubkey_or_sign(
             HdImplementation::Bip32 => {
                 let chain_code_bytes = chain_code.to_bytes().to_vec();
                 let (derived_child, tweak, derived_chain_code)
-                    = hd_keys::get_hd_key_by_crate(y_sum, path, chain_code_bytes);
+                    = match path.contains('\'') {
+                        false => hd_keys::get_hd_child_by_crate(y_sum, path, chain_code_bytes),
+                        true => hd_keys::get_hardened_hd_child_by_crate(
+                            party_key.u_i.clone(),
+                            path,
+                            chain_code_bytes
+                        )
+                    };
                 let tweak_scaler = FE::from_bytes(tweak.as_slice()).unwrap();
                 (derived_child, tweak_scaler, derived_chain_code)
             }

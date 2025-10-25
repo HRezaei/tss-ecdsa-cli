@@ -1,5 +1,15 @@
-use std::convert::TryInto;
-use bip32::{ChildNumber, ExtendedKeyAttrs, KeyFingerprint, PublicKey, PublicKeyBytes, XPub};
+use std::convert::{TryFrom, TryInto};
+use bip32::{
+    ChildNumber,
+    ExtendedKeyAttrs,
+    KeyFingerprint,
+    PublicKey,
+    PublicKeyBytes,
+    XPub,
+    XPrv,
+    ExtendedKey,
+    Prefix
+};
 use bip32::secp256k1::ecdsa::VerifyingKey;
 use curv::arithmetic::{Converter, BasicOps, One};
 use curv::BigInt;
@@ -9,7 +19,7 @@ use curv::cryptographic_primitives::hashing::HmacExt;
 use ed25519_bip32::DerivationScheme;
 use hmac::Hmac;
 use sha2::{Sha512};
-use crate::protocols::eddsa::create_public_key_ed25519_bip32;
+use crate::protocols::eddsa::{create_private_key_ed25519_bip32, create_public_key_ed25519_bip32};
 
 pub fn get_legacy_hd_key<E: Curve>(y_sum: &Point<E>, path: &str, chain_code: Point<E>) -> (Point<E>, Scalar<E>, Vec<u8>) {
     let path_vector: Vec<BigInt> = path
@@ -78,11 +88,31 @@ pub fn legacy_hd_key<E: Curve>(
 
 
 pub trait HdCurveHandler {
-    fn get_hd_key(y_sum: Point<Self>, path: &str, chain_code: Vec<u8>) -> (Point<Self>, Vec<u8>, Vec<u8>) where Self: Curve;
+    fn get_hd_child(y_sum: Point<Self>, path: &str, chain_code: Vec<u8>) -> (Point<Self>, Vec<u8>, Vec<u8>) where Self: Curve;
+    fn get_hardened_hd_child(private_key: Scalar<Self>, path: &str, chain_code: Vec<u8>) -> (Point<Self>, Vec<u8>, Vec<u8>) where Self: Curve;
+}
+
+fn parse_hd_path(path: &str) -> Vec<(u32, bool)> {
+    path.split('/')
+        .map(|s| {
+            let hardened = s.ends_with('\'');
+            let number_str = if hardened { &s[..s.len() - 1] } else { s };
+            let number = number_str.parse::<u32>().expect("Invalid number");
+            (number, hardened)
+        })
+        .collect()
+}
+
+pub fn hd_path_to_integer(index: u32, is_hardened: bool) -> u32 {
+    if is_hardened {
+        index + 0x80000000
+    } else {
+        index
+    }
 }
 
 impl HdCurveHandler for Secp256k1 {
-    fn get_hd_key(pub_key: Point<Self>, path: &str, chain_code: Vec<u8>) -> (Point<Self>, Vec<u8>, Vec<u8>) {
+    fn get_hd_child(pub_key: Point<Self>, path: &str, chain_code: Vec<u8>) -> (Point<Self>, Vec<u8>, Vec<u8>) {
         let master_pub_key_bytes = pub_key.to_bytes(true).to_vec();
         let master_chain_code_bytes = &chain_code[0..32];
 
@@ -97,12 +127,11 @@ impl HdCurveHandler for Secp256k1 {
             chain_code: master_chain_code_bytes.try_into().unwrap(),
         });
 
-        let path_numbers = path.split('/')
-            .map(|s| s.parse::<u32>().expect("Invalid number"));
+        let path_numbers: Vec<(u32, bool)> = parse_hd_path(path);
 
         let mut child_key = pub_key_crate;
         let mut tweak_scalar: Scalar<Self> = Scalar::<Self>::zero();
-        for child_path in path_numbers {
+        for (child_path, _is_hardened) in path_numbers {
             let child_num = ChildNumber(child_path);
             let (child_tweak, _chain_code) = child_key
                 .public_key()
@@ -114,10 +143,46 @@ impl HdCurveHandler for Secp256k1 {
         let child_chain_code= child_key.attrs().chain_code.to_vec();
         (child_pub_key, tweak_scalar.to_bytes().to_vec(), child_chain_code)
     }
+
+    fn get_hardened_hd_child(private_key: Scalar<Self>, path: &str, chain_code: Vec<u8>) -> (Point<Self>, Vec<u8>, Vec<u8>) {
+        let mut parent_private_key_bytes = private_key.to_bytes().to_vec();
+        parent_private_key_bytes.insert(0, 0);
+        let master_chain_code_bytes = &chain_code[0..32];
+
+        let finger_print = KeyFingerprint::from([0u8; 4]);
+        //let prv_key_bytes: PrivateKeyBytes = parent_private_key_bytes.try_into().unwrap();
+        //let parent_private_key = PrivateKey::from_bytes(&prv_key_bytes).unwrap();
+        let extended_key_crate = ExtendedKey {
+            prefix: Prefix::XPRV,
+            attrs: ExtendedKeyAttrs {
+                depth: 0,
+                parent_fingerprint: finger_print,
+                child_number: ChildNumber(10), //This is not important during HD derivation
+                chain_code: master_chain_code_bytes.try_into().unwrap(),
+            },
+            key_bytes: parent_private_key_bytes.try_into().unwrap(),
+        };
+        let pub_key_crate: XPrv = XPrv::try_from(extended_key_crate).unwrap();
+
+        let path_numbers: Vec<(u32, bool)> = parse_hd_path(path);
+
+        let mut child_key = pub_key_crate;
+        for (child_path, is_hardened) in path_numbers {
+            let child_num = ChildNumber::new(child_path, is_hardened).unwrap();
+            child_key = child_key.derive_child(child_num).unwrap();
+        }
+        let child_chain_code= child_key.attrs().chain_code.to_vec();
+        let child_private_key_bytes = child_key.private_key().to_bytes();
+        //let child_private_key_scalar = Scalar::<Self>::from_bytes(&child_private_key_bytes).unwrap();
+        //let tweak_bytes = (child_private_key_scalar - private_key).to_bytes();
+        let tweak_bytes = child_private_key_bytes;
+        let child_pub_key = Point::<Self>::from_bytes(&child_key.public_key().to_bytes()).unwrap();
+        (child_pub_key, tweak_bytes.to_vec(), child_chain_code)
+    }
 }
 
 impl HdCurveHandler for Ed25519 {
-    fn get_hd_key(pub_key: Point<Self>, path: &str, chain_code: Vec<u8>) -> (Point<Self>, Vec<u8>, Vec<u8>) {
+    fn get_hd_child(pub_key: Point<Self>, path: &str, chain_code: Vec<u8>) -> (Point<Self>, Vec<u8>, Vec<u8>) {
         let mut path_numbers = path
             .split('/')
             .map(|s| s.parse::<u32>().expect("Invalid number"))
@@ -151,9 +216,27 @@ impl HdCurveHandler for Ed25519 {
 
         (child_pub_key, tweak_scalar.to_bytes().to_vec(), child_key.chain_code().to_vec())
     }
+
+    fn get_hardened_hd_child(private_key: Scalar<Self>, path: &str, chain_code: Vec<u8>) -> (Point<Self>, Vec<u8>, Vec<u8>) {
+        let path_numbers = parse_hd_path(path);
+
+        // Here, it is not a child yet, but parent. However, we name it child, to reuse it in loop:
+        let mut child_key = create_private_key_ed25519_bip32(private_key.clone(), chain_code);
+        for (mut child_path, is_hardened) in path_numbers {
+            child_path = hd_path_to_integer(child_path, is_hardened);
+            child_key = child_key.derive(DerivationScheme::V2, child_path);
+        }
+        let child_public_key_bytes = &child_key.public().public_key();
+        let child_pub_key = Point::<Ed25519>::from_bytes(child_public_key_bytes).unwrap();
+        let child_private_key_bytes = &child_key.extended_secret_key()[0..32];
+        (child_pub_key, child_private_key_bytes.to_vec(), child_key.chain_code().to_vec())
+    }
 }
 
-pub fn get_hd_key_by_crate<E: HdCurveHandler + Curve>(y_sum: Point<E>, path: &str, chain_code: Vec<u8>) -> (Point<E>, Vec<u8>, Vec<u8>) {
-    E::get_hd_key(y_sum, path, chain_code)
+pub fn get_hd_child_by_crate<E: HdCurveHandler + Curve>(y_sum: Point<E>, path: &str, chain_code: Vec<u8>) -> (Point<E>, Vec<u8>, Vec<u8>) {
+    E::get_hd_child(y_sum, path, chain_code)
 }
 
+pub fn get_hardened_hd_child_by_crate<E: HdCurveHandler + Curve>(private_key: Scalar<E>, path: &str, chain_code: Vec<u8>) -> (Point<E>, Vec<u8>, Vec<u8>) {
+    E::get_hardened_hd_child(private_key, path, chain_code)
+}

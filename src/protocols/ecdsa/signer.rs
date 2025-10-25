@@ -28,6 +28,7 @@ use crate::ecdsa::{CURVE_NAME, FE, GE};
 use crate::common::{broadcast, poll_for_broadcasts, poll_for_p2p, sendp2p, Params, PartySignup, sha256_digest};
 use crate::protocols::verify_dlog_proofs;
 
+
 #[derive(Hash, PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct TupleKey {
     pub first: String,
@@ -55,8 +56,19 @@ pub fn sign(
 
     // Signup
     let signup_path = "signupsign";
-    let (party_num_int, uuid, total_parties) = match signup(signup_path, &client, &params, room_id, party_id, CURVE_NAME).unwrap() {
-        (PartySignup { number, uuid }, total_parties) => (number, uuid, total_parties),
+    let (party_num_int, uuid, total_parties) = match signup(
+        signup_path,
+        &client,
+        &params,
+        room_id,
+        party_id,
+        CURVE_NAME
+    ).unwrap() {
+        (PartySignup { number, uuid }, total_parties) => (
+            number,
+            uuid,
+            total_parties
+        ),
     };
 
     let debug = json!({
@@ -65,7 +77,7 @@ pub fn sign(
         "uuid": uuid,
         "curve": CURVE_NAME
     });
-    println!("{}", serde_json::to_string_pretty(&debug).unwrap());
+    eprintln!("{}", serde_json::to_string_pretty(&debug).unwrap());
 
     // round 0: collect signers IDs
     assert!(broadcast(

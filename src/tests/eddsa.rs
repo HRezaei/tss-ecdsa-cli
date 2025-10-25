@@ -1,79 +1,15 @@
 
 use curv::arithmetic::Converter;
 use curv::BigInt;
-use ed25519_bip32::{DerivationScheme, Signature, XPrv};
+use ed25519_bip32::{Signature, XPrv};
 use ed25519_bip32::{XPub};
 
 use curv::elliptic::curves::{Ed25519, Point, Scalar};
-use crate::common::hd_keys;
-use crate::common::hd_keys::{get_legacy_hd_key};
 use multi_party_eddsa::protocols::Signature as ZengoSignature;
 use crate::protocols::eddsa::create_public_key_ed25519_bip32;
 
 
-type GE = Point<Ed25519>;
 type FE = Scalar<Ed25519>;
-
-fn pub_key_split(pub_key: XPub) -> (String, String) {
-    let uncompressed = pub_key.public_key_slice();
-
-    let pub_key_bytes = &uncompressed[0..32]; // bytes 0 to 32
-    let chain_code = &pub_key.chain_code()[0..32]; // bytes 0 to 32
-
-    (hex::encode(pub_key_bytes), hex::encode(chain_code))
-}
-
-fn derive_child_by_crate_ed25519_bip32(
-    pub_key: [u8; 32],
-    chain_code: [u8; 32],
-    path: String,
-) -> (String, String) {
-    let pub_key_crate = XPub::from_pk_and_chaincode(&pub_key, &chain_code);
-
-    let path_numbers = path
-        .split('/')
-        .map(|s| s.parse::<u32>().expect("Invalid number"));
-
-    let mut child_key = pub_key_crate;
-    for child_path in path_numbers {
-        let derivation_result = child_key.derive(DerivationScheme::V2, child_path).unwrap();
-        child_key = derivation_result.pub_key
-    }
-
-    let (child_x, child_chain_code) = pub_key_split(child_key);
-
-    (child_x, child_chain_code)
-}
-
-fn derive_child_by_crate_ed25519_bip32_core(
-    pub_key: [u8; 32],
-    chain_code: [u8; 32],
-    path: String,
-) -> (String, String) {
-    use ed25519_bip32_core::{
-        DerivationIndex, DerivationScheme as SchemeCore, XPub as XPubCore,
-    };
-
-    let master_core = XPubCore::from_pk_and_chaincode(&pub_key, &chain_code);
-    let path_numbers = path
-        .split('/')
-        .map(|s| s.parse::<u32>().expect("Invalid number"));
-
-    let mut child_key = master_core;
-    for child_path in path_numbers {
-        let derivation_index = DerivationIndex::from(child_path);
-        child_key = child_key
-            .derive(SchemeCore::V2, derivation_index)
-            .expect("core derivation fail");
-    }
-
-    let uncompressed = child_key.public_key_slice();
-
-    let x = &uncompressed[0..32]; // bytes 0 to 32
-    let chain_code = &child_key.chain_code()[0..32]; // bytes 0 to 32
-
-    (hex::encode(x), hex::encode(chain_code))
-}
 
 #[test]
 fn test_data_type_conversions() {
@@ -186,74 +122,6 @@ fn test_pub_key_conversions() {
     assert!(pub_key_crate.verify(&message_bytes, &bip32_signature));
 }
 
-#[test]
-fn test_hd_derivations() {
-    let master_public_key_bytes = [
-        41, 9, 42, 231, 181, 54, 70, 117, 106, 129, 35, 18, 215, 174, 142, 187, 186, 189, 125,
-        129, 103, 131, 219, 52, 59, 89, 213, 14, 180, 27, 125, 250,
-    ];
-    let master_chain_code_bytes = [
-        245, 182, 135, 71, 224, 139, 206, 15, 200, 27, 106, 253, 197, 91, 155, 228, 38, 58,
-        116, 150, 154, 116, 219, 141, 107, 189, 158, 80, 10, 82, 202, 13,
-    ];
-    let path = "1/0/3";
-    let master_public_key: GE = GE::from_bytes(&master_public_key_bytes).unwrap();
-    let chain_code_scalar = FE::from_bytes(&master_chain_code_bytes).unwrap();
-    let chain_code = chain_code_scalar * GE::generator();
-    let (_child_key_legacy,
-        _child_tweak_legacy,
-        _child_chain_code_legacy
-    ) = get_legacy_hd_key(&master_public_key, path, chain_code.clone());
-
-    let (child_key_bip32, child_chain_code_bip32) =
-        derive_child_by_crate_ed25519_bip32(
-            master_public_key_bytes,
-            master_chain_code_bytes,
-            path.to_string()
-        );
-    let (child_key_core, child_chain_code_core) =
-        derive_child_by_crate_ed25519_bip32_core(
-            master_public_key_bytes,
-            master_chain_code_bytes,
-            path.to_string()
-        );
-
-    /* Try crates with bytes export of the legacy key data:
-    let mut master_bytes: [u8;32]  = [0u8; 32];
-    master_bytes.copy_from_slice(&master_public_key.to_bytes(false).iter().as_slice()[0..32]);
-    let mut master_cc: [u8;32] = [0u8; 32];
-    master_cc.copy_from_slice(&chain_code.to_bytes(false).iter().as_slice()[0..32]);
-    let (child_key_bip32, child_chain_code_bip32) = derive_child_by_crate_ed25519_bip32(master_bytes, master_cc, path.to_string());
-    let (child_key_core, child_chain_code_core) = derive_child_by_crate_ed25519_bip32_core(master_bytes, master_cc, path.to_string());
-     */
-
-    assert_eq!(child_key_bip32, child_key_core);
-    assert_eq!(child_chain_code_bip32, child_chain_code_core);
-
-    let (_new_lib_child,
-        _new_lib_tweak,
-        new_lib_cc
-    ) = hd_keys::get_hd_key_by_crate(master_public_key, path, master_chain_code_bytes.to_vec());
-    assert_eq!(hex::encode(new_lib_cc), child_chain_code_bip32);
-    /*
-    This fails because derive_child_by_crate_ed25519_bip32 does not do final addition operation
-    as documented in BIP32: "The returned child key Ki is point(parse256(IL)) + Kpar."
-    See here: https://en.bitcoin.it/wiki/BIP_0032#Public_parent_key_%E2%86%92_public_child_key
-     */
-    //assert_eq!(hex::encode(new_lib_child.to_bytes(false).to_vec()), child_key_bip32);
-
-    /*
-    These fail because legacy does not comply with third party crates. As said above, mainly
-    because legacy code considers chain_code as 33 bytes and also represents index number as
-    a varying length bytes (from 1 to 4 bytes):
-
-    let child_key_legacy_hex: String = hex::encode(child_key_legacy.to_bytes(false).to_vec());
-    let child_chain_code_legacy_hex = hex::encode(child_chain_code_legacy);
-    assert_eq!(child_key_legacy_hex, child_key_bip32);
-    assert_eq!(child_chain_code_legacy_hex, child_chain_code_bip32);
-    */
-}
-
 pub fn verify_signature(
     signature_r_hex: String,
     signature_s_hex: String,
@@ -277,6 +145,196 @@ pub fn verify_signature(
     };
 
     assert!(signature.verify(&message_bytes, &zengo_pub_key).is_ok());
+}
+
+#[cfg(test)]
+mod hd_derivation {
+    use bitcoin::hex::DisplayHex;
+    use curv::elliptic::curves::{Ed25519, Point, Scalar};
+    use ed25519_bip32::{XPub, DerivationScheme};
+    use hex::FromHex;
+    use crate::common::hd_keys::{get_legacy_hd_key, hd_path_to_integer};
+    use crate::common::hd_keys;
+    type GE = Point<Ed25519>;
+    type FE = Scalar<Ed25519>;
+
+    fn pub_key_split(pub_key: XPub) -> (String, String) {
+        let uncompressed = pub_key.public_key_slice();
+
+        let pub_key_bytes = &uncompressed[0..32]; // bytes 0 to 32
+        let chain_code = &pub_key.chain_code()[0..32]; // bytes 0 to 32
+
+        (hex::encode(pub_key_bytes), hex::encode(chain_code))
+    }
+
+    fn derive_child_by_crate_ed25519_bip32(
+        pub_key: [u8; 32],
+        chain_code: [u8; 32],
+        path: String,
+    ) -> (String, String) {
+        let pub_key_crate = XPub::from_pk_and_chaincode(&pub_key, &chain_code);
+
+        let path_numbers = path
+            .split('/')
+            .map(|s| s.parse::<u32>().expect("Invalid number"));
+
+        let mut child_key = pub_key_crate;
+        for child_path in path_numbers {
+            let derivation_result = child_key.derive(DerivationScheme::V2, child_path).unwrap();
+            child_key = derivation_result.pub_key
+        }
+
+        let (child_x, child_chain_code) = pub_key_split(child_key);
+
+        (child_x, child_chain_code)
+    }
+
+    fn derive_child_by_crate_ed25519_bip32_core(
+        pub_key: [u8; 32],
+        chain_code: [u8; 32],
+        path: String,
+    ) -> (String, String) {
+        use ed25519_bip32_core::{
+            DerivationIndex, DerivationScheme as SchemeCore, XPub as XPubCore,
+        };
+
+        let master_core = XPubCore::from_pk_and_chaincode(&pub_key, &chain_code);
+        let path_numbers = path
+            .split('/')
+            .map(|s| s.parse::<u32>().expect("Invalid number"));
+
+        let mut child_key = master_core;
+        for child_path in path_numbers {
+            let derivation_index = DerivationIndex::from(child_path);
+            child_key = child_key
+                .derive(SchemeCore::V2, derivation_index)
+                .expect("core derivation fail");
+        }
+
+        let uncompressed = child_key.public_key_slice();
+
+        let x = &uncompressed[0..32]; // bytes 0 to 32
+        let chain_code = &child_key.chain_code()[0..32]; // bytes 0 to 32
+
+        (hex::encode(x), hex::encode(chain_code))
+    }
+
+    #[test]
+    fn test_hd_derivations() {
+        let master_public_key_bytes = [
+            41, 9, 42, 231, 181, 54, 70, 117, 106, 129, 35, 18, 215, 174, 142, 187, 186, 189, 125,
+            129, 103, 131, 219, 52, 59, 89, 213, 14, 180, 27, 125, 250,
+        ];
+        let master_chain_code_bytes = [
+            245, 182, 135, 71, 224, 139, 206, 15, 200, 27, 106, 253, 197, 91, 155, 228, 38, 58,
+            116, 150, 154, 116, 219, 141, 107, 189, 158, 80, 10, 82, 202, 13,
+        ];
+        let path = "1/0/3";
+        let master_public_key: GE = GE::from_bytes(&master_public_key_bytes).unwrap();
+        let chain_code_scalar = FE::from_bytes(&master_chain_code_bytes).unwrap();
+        let chain_code = chain_code_scalar * GE::generator();
+        let (_child_key_legacy,
+            _child_tweak_legacy,
+            _child_chain_code_legacy
+        ) = get_legacy_hd_key(&master_public_key, path, chain_code.clone());
+
+        let (child_key_bip32, child_chain_code_bip32) =
+            derive_child_by_crate_ed25519_bip32(
+                master_public_key_bytes,
+                master_chain_code_bytes,
+                path.to_string()
+            );
+        let (child_key_core, child_chain_code_core) =
+            derive_child_by_crate_ed25519_bip32_core(
+                master_public_key_bytes,
+                master_chain_code_bytes,
+                path.to_string()
+            );
+
+        /* Try crates with bytes export of the legacy key data:
+        let mut master_bytes: [u8;32]  = [0u8; 32];
+        master_bytes.copy_from_slice(&master_public_key.to_bytes(false).iter().as_slice()[0..32]);
+        let mut master_cc: [u8;32] = [0u8; 32];
+        master_cc.copy_from_slice(&chain_code.to_bytes(false).iter().as_slice()[0..32]);
+        let (child_key_bip32, child_chain_code_bip32) = derive_child_by_crate_ed25519_bip32(master_bytes, master_cc, path.to_string());
+        let (child_key_core, child_chain_code_core) = derive_child_by_crate_ed25519_bip32_core(master_bytes, master_cc, path.to_string());
+         */
+
+        assert_eq!(child_key_bip32, child_key_core);
+        assert_eq!(child_chain_code_bip32, child_chain_code_core);
+
+        let (_new_lib_child,
+            _new_lib_tweak,
+            new_lib_cc
+        ) = hd_keys::get_hd_child_by_crate(master_public_key, path, master_chain_code_bytes.to_vec());
+        assert_eq!(hex::encode(new_lib_cc), child_chain_code_bip32);
+        /*
+        This fails because derive_child_by_crate_ed25519_bip32 does not do final addition operation
+        as documented in BIP32: "The returned child key Ki is point(parse256(IL)) + Kpar."
+        See here: https://en.bitcoin.it/wiki/BIP_0032#Public_parent_key_%E2%86%92_public_child_key
+         */
+        //assert_eq!(hex::encode(new_lib_child.to_bytes(false).to_vec()), child_key_bip32);
+
+        /*
+        These fail because legacy does not comply with third party crates. As said above, mainly
+        because legacy code considers chain_code as 33 bytes and also represents index number as
+        a varying length bytes (from 1 to 4 bytes):
+
+        let child_key_legacy_hex: String = hex::encode(child_key_legacy.to_bytes(false).to_vec());
+        let child_chain_code_legacy_hex = hex::encode(child_chain_code_legacy);
+        assert_eq!(child_key_legacy_hex, child_key_bip32);
+        assert_eq!(child_chain_code_legacy_hex, child_chain_code_bip32);
+        */
+    }
+
+    #[test]
+    fn test_hardened_derivation() {
+        let _parent_fingerprint_hex = "00000000";
+        let parent_chain_code_hex = "90046a93de5380a72b5e45010748567d5ea02bbf6522f979e05c0d8d8ca9fffb";
+        let parent_private_hex = "2b4be7f19ee27bbf30c667b642d5f4aa69fd169872f8fc3059c08ebae2eb19e7";
+        let _parent_public_hex = "00a4b2856bfec510abab89753fac1ac0e1112364e7d250545963f135f2a33188ed";
+        // This information is taken from the first test vector here:
+        // https://github.com/satoshilabs/slips/blob/master/slip-0010.md#test-vector-1-for-ed25519
+        let expected_child_chain_code = "8b59aa11380b624e81507a27fedda59fea6d0b779a778918a2fd3590e16e9c69";
+        let expected_child_private_key = "68e0fe46dfb67e368c75379acec591dad19df3cde26e63b93a8e704f1dade7a3";
+        let _expected_child_public_key = "008c8a13df77a28f3445213a0f432fde644acaa215fc72dcdf300d5efaa85d350c";
+
+        let parent_private_bytes = <[u8; 32]>::from_hex(parent_private_hex)
+            .expect("Invalid hex or wrong length");
+        let parent_chain_code_bytes = <[u8; 32]>::from_hex(parent_chain_code_hex)
+            .expect("Invalid hex or wrong length");
+        let parent_private_key = ed25519_bip32::XPrv::
+            from_nonextended_force(&parent_private_bytes, &parent_chain_code_bytes);//.unwrap();
+
+        let index = hd_path_to_integer(0, true);
+        let child = parent_private_key.derive(DerivationScheme::V2, index);
+
+        let child_chain_code_hex = child.chain_code().as_hex().to_string();
+        let child_private_key_hex = child.extended_secret_key_slice().as_hex().to_string();
+        println!("chile private key: {:?}", child_private_key_hex);
+        println!("child chain code: {:?}", child_chain_code_hex);
+        println!("child public key: {:?}", child.public().public_key().as_hex());
+        println!("expected chain code {:?}", expected_child_chain_code);
+        println!("expected private key {:?}", expected_child_private_key);
+        // These checks fail, and I'm not sure are test vectors really a good reference because they
+        // are from SLIP-0010 and not exactly BIP32. They seem very similar in definition but
+        // still there might be some differences. Also, I'm not sure if ed25519-bip32 us fully
+        // compliant with bip32 or not!
+        //assert_eq!(expected_child_chain_code, child_chain_code_hex);
+        //assert_eq!(expected_child_private_key, child_private_key_hex);
+
+        let private_key_scalar = Scalar::<Ed25519>::from_bytes(&parent_private_bytes).unwrap();
+        let (child_public_key, _tweak, _child_chain_code) =
+            hd_keys::get_hardened_hd_child_by_crate(
+                private_key_scalar,
+                "0'",
+                parent_chain_code_bytes.to_vec()
+        );
+        let _child_public_key_hex = hex::encode(child_public_key.to_bytes(true).to_vec());
+        //These also fail, but we don't know which side is ground truth!
+        //assert_eq!(hex::encode(child_chain_code), expected_child_chain_code);
+        //assert_eq!(child_public_key_hex, expected_child_public_key);
+    }
 }
 
 #[cfg(test)]

@@ -145,7 +145,7 @@ pub fn run_pubkey(keys_file_path:&str, path:&str, hd_variant: HdImplementation) 
 
     // Read data from keys file
     let EdDSAParameters {
-        party_key :_party_keys,
+        party_key,
         chain_code,
         shared_keys: _shared_keys,
         party_id: _party_id,
@@ -166,14 +166,26 @@ pub fn run_pubkey(keys_file_path:&str, path:&str, hd_variant: HdImplementation) 
             match hd_variant {
                 HdImplementation::Legacy => {
                     let chain_code = chain_code * GE::generator();
-                    hd_keys::get_legacy_hd_key(&y_sum, path, chain_code)
+                    match path.contains('\'') {
+                        false => hd_keys::get_legacy_hd_key(&y_sum, path, chain_code),
+                        true => {
+                            eprintln!("Hardened child derivation is not supported in legacy HD.");
+                            exit(1);
+                        }
+                    }
                 }
                 HdImplementation::Bip32 => {
                     let chain_code_bytes = chain_code.to_bytes().to_vec();
                     let (derived_child, tweak, derived_chain_code)
-                        = hd_keys::get_hd_key_by_crate(y_sum, path, chain_code_bytes);
+                        = match path.contains('\'') {
+                        true => hd_keys::get_hardened_hd_child_by_crate(
+                            party_key.keypair.expanded_private_key.private_key,
+                            path,
+                            chain_code_bytes
+                        ),
+                        false => hd_keys::get_hd_child_by_crate(y_sum, path, chain_code_bytes)
+                    };
                     let tweak_scaler = FE::from_bytes(tweak.as_slice()).unwrap();
-
                     (derived_child, tweak_scaler, derived_chain_code)
                 }
             }
@@ -199,6 +211,33 @@ pub fn create_public_key_ed25519_bip32(pub_key: GE, chain_code: Vec<u8>) -> ed25
     master_chain_code_bytes.copy_from_slice(chain_code.as_slice());
 
     ed25519_bip32::XPub::from_pk_and_chaincode(&master_pub_key_bytes, &master_chain_code_bytes)
+}
+
+pub fn create_private_key_ed25519_bip32(private_key: FE, chain_code: Vec<u8>) -> ed25519_bip32::XPrv {
+    let prv_bytes = private_key.to_bytes().to_vec();
+    let mut master_private_key_bytes: [u8;32] = [0;32];
+    master_private_key_bytes.copy_from_slice(prv_bytes.as_slice());
+    let mut master_chain_code_bytes: [u8;32] = [0;32];
+    master_chain_code_bytes.copy_from_slice(chain_code.as_slice());
+
+    // 2. Derive the public key point
+    let public_point: Point<Ed25519> = Point::<Ed25519>::generator() * &private_key;
+    let public_key_bytes = public_point.to_bytes(true); // Compressed (32 bytes)
+
+    // 4. Concatenate: private key || chain code || public key
+    let mut xprv_bytes = Vec::with_capacity(96);
+    xprv_bytes.extend_from_slice(&master_private_key_bytes); // 32 bytes
+    xprv_bytes.extend_from_slice(&chain_code);        // 32 bytes
+    xprv_bytes.extend_from_slice(&public_key_bytes);  // 32 bytes
+
+    // 5. Create the XPrv
+    //ed25519_bip32::XPrv::from_bytes_verified(<[u8; 96]>::try_from(xprv_bytes).unwrap())
+    //    .expect("Failed to create XPrv from scalar + chain code + public key")
+
+    ed25519_bip32::XPrv::from_nonextended_force(
+        &master_private_key_bytes,
+        &master_chain_code_bytes
+    )
 }
 
 pub(crate) fn sum_of_fragment_files(keyfiles: Vec<String>) -> Result<(GE, GE, FE), String> {

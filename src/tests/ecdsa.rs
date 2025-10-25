@@ -3,9 +3,18 @@
 mod hd_derivation {
     use std::convert::{TryInto};
     use std::str::FromStr;
-    use bip32::{ChildNumber, ExtendedKeyAttrs, ExtendedPublicKey, KeyFingerprint, PublicKeyBytes, XPub};
+    use bip32::{
+        ChildNumber,
+        ExtendedKeyAttrs,
+        ExtendedPublicKey,
+        KeyFingerprint,
+        PublicKeyBytes,
+        XPrv,
+        XPub
+    };
     use bip32::secp256k1::elliptic_curve::PublicKey;
     use bip32::secp256k1::ecdsa::VerifyingKey;
+    use bitcoin::hex::DisplayHex;
     use curv::arithmetic::{Converter};
     use curv::BigInt;
     use curv::elliptic::curves::{Point, Secp256k1};
@@ -234,7 +243,7 @@ mod hd_derivation {
         let (new_lib_child,
             _new_lib_tweak,
             new_lib_cc
-        ) = hd_keys::get_hd_key_by_crate(original_public_key, path, chain_code_bytes);
+        ) = hd_keys::get_hd_child_by_crate(original_public_key, path, chain_code_bytes);
         assert_eq!(new_lib_child.x_coord().unwrap().to_hex(), expected_pubkey_x);
         assert_eq!(new_lib_child.y_coord().unwrap().to_hex(), expected_pubkey_y);
         assert_eq!(hex::encode(new_lib_cc), expected_chain_code);
@@ -367,6 +376,90 @@ mod hd_derivation {
         assert_eq!(bip32_child_y, coins_y);
         assert_eq!(bip32_child_chain_code, coins_chain_code);
     }
+
+    #[test]
+    fn test_hardened_hd_derivation_based_on_bip32_docs() {
+        /**
+        Reference keys are copied from here:
+        https://en.bitcoin.it/wiki/BIP_0032#Test_Vectors
+        */
+        use bitcoin::bip32::{Xpriv, DerivationPath};
+        use bitcoin::bip32::Xpub;
+        use bitcoin::network::Network;
+        use bitcoin::secp256k1::Secp256k1 as BitcoinSecp256k1;
+        use hex::decode;
+
+        let seed_hex = "000102030405060708090a0b0c0d0e0f";
+        let seed_bytes = decode(seed_hex).expect("Invalid hex");
+        let secp = BitcoinSecp256k1::new();
+
+        // Create master key (m)
+        let master = Xpriv::new_master(Network::Bitcoin, &seed_bytes).expect("Master key error");
+        let master_xprv = master.to_string();
+        let master_pub_key = Xpub::from_priv(&secp, &master);
+
+        let expected_master_key = "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi";
+        let expected_master_pub = "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8";
+
+        assert_eq!(expected_master_key, master_xprv);
+        assert_eq!(expected_master_pub, master_pub_key.to_string());
+
+        // Derive child key at m/0
+        let path = "0'";
+        let bip32_path = DerivationPath::from_str(("m/".to_owned() + path).as_str()).unwrap();
+        let child = master.derive_priv(&secp, &bip32_path).expect("Child key error");
+        let child_private_key = child.to_string();
+        let child_pub_key = Xpub::from_priv(&secp, &child);
+
+        let expected_child_key = "xprv9uHRZZhk6KAJC1avXpDAp4MDc3sQKNxDiPvvkX8Br5ngLNv1TxvUxt4cV1rGL5hj6KCesnDYUhd7oWgT11eZG7XnxHrnYeSvkzY7d2bhkJ7";
+        let expected_child_pub = "xpub68Gmy5EdvgibQVfPdqkBBCHxA5htiqg55crXYuXoQRKfDBFA1WEjWgP6LHhwBZeNK1VTsfTFUHCdrfp1bgwQ9xv5ski8PX9rL2dZXvgGDnw";
+
+        assert_eq!(expected_child_key, child_private_key);
+        assert_eq!(expected_child_pub, child_pub_key.to_string());
+
+        // Slice out x and y coordinates
+        let (child_pub_x, child_pub_y) = pub_key_coords(child_pub_key); // bytes 1 to 32
+        let child_pub_chain_code = hex::encode(child_pub_key.chain_code);
+
+        let master_chain_code = master.chain_code.to_bytes().to_vec();
+        let master_scalar = FE::from_bytes(&master.private_key.secret_bytes()).unwrap();
+
+        let (
+            child_pub_by_us,
+            child_tweak,
+            child_chain_code_by_us
+        ) = hd_keys::get_hardened_hd_child_by_crate(
+            master_scalar.clone(),
+            path,
+            master_chain_code.clone()
+        );
+        let child_pub_by_us_x = child_pub_by_us.x_coord().unwrap().to_hex();
+        let child_pub_by_us_y = child_pub_by_us.y_coord().unwrap().to_hex();
+        assert_eq!(child_pub_by_us_x, child_pub_x);
+        assert_eq!(child_pub_by_us_y, child_pub_y);
+        assert_eq!(child_chain_code_by_us.as_hex().to_string(), child_pub_chain_code);
+        assert_eq!(child_tweak.as_hex().to_string(), child.private_key.secret_bytes().as_hex().to_string());
+        //################################################### Try the last test vector:
+        let path = "0'/1/2'/2/1000000000";
+        let expected_child_pub = "xpub6H1LXWLaKsWFhvm6RVpEL9P4KfRZSW7abD2ttkWP3SSQvnyA8FSVqNTEcYFgJS2UaFcxupHiYkro49S8yGasTvXEYBVPamhGW6cFJodrTHy";
+        let expected_child_prv = "xprvA41z7zogVVwxVSgdKUHDy1SKmdb533PjDz7J6N6mV6uS3ze1ai8FHa8kmHScGpWmj4WggLyQjgPie1rFSruoUihUZREPSL39UNdE3BBDu76";
+        let expected_child_prv = XPrv::from_str(expected_child_prv).unwrap();
+        let child_pub_key = Xpub::from_str(expected_child_pub).unwrap();
+        let (expected_child_pub_x, expected_child_pub_y) = pub_key_coords(child_pub_key);
+        let expected_child_chain_code = child_pub_key.chain_code.to_bytes().to_vec();
+
+        let (
+            child_pub_by_us,
+            child_tweak,
+            child_chain_code_by_us
+        ) = hd_keys::get_hardened_hd_child_by_crate(master_scalar, path, master_chain_code);
+        let child_pub_by_us_x = child_pub_by_us.x_coord().unwrap().to_hex();
+        let child_pub_by_us_y = child_pub_by_us.y_coord().unwrap().to_hex();
+        assert_eq!(child_pub_by_us_x, expected_child_pub_x);
+        assert_eq!(child_pub_by_us_y, expected_child_pub_y);
+        assert_eq!(child_chain_code_by_us, expected_child_chain_code);
+        assert_eq!(child_tweak, expected_child_prv.private_key().to_bytes().to_vec());
+    }
 }
 
 
@@ -374,14 +467,14 @@ mod hd_derivation {
 pub(crate) mod integration {
     use curv::arithmetic::Converter;
     use curv::BigInt;
-    use curv::elliptic::curves::{Point, Scalar, Secp256k1};
+    use curv::elliptic::curves::{Point, Secp256k1};
     use crate::common::DKGSignScheme;
     use crate::protocols::ecdsa::{sum_of_fragment_files, FE, GE};
     use crate::tests::integration::{check_keygen_t_of_n, check_sign_t_of_n_generate, prepare_manager_and_keys};
     use crate::tests::{kill_manager, TestResourcesCleanUp};
     pub fn check_sig(
-        r: &Scalar<Secp256k1>,
-        s: &Scalar<Secp256k1>,
+        r: &FE,
+        s: &FE,
         msg: &BigInt,
         pk: &Point<Secp256k1>,
     ) {
