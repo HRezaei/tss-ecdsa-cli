@@ -4,12 +4,9 @@ use curv::BigInt;
 use ed25519_bip32::{Signature, XPrv};
 use ed25519_bip32::{XPub};
 
-use curv::elliptic::curves::{Ed25519, Point, Scalar};
 use multi_party_eddsa::protocols::Signature as ZengoSignature;
-use crate::protocols::eddsa::create_public_key_ed25519_bip32;
+use crate::protocols::eddsa::{create_public_key_ed25519_bip32, FE, GE};
 
-
-type FE = Scalar<Ed25519>;
 
 #[test]
 fn test_data_type_conversions() {
@@ -23,7 +20,7 @@ fn test_data_type_conversions() {
 
     assert_eq!(big_int_bytes, raw_bytes);
 
-    let pub_key = Point::<Ed25519>::from_bytes(raw_bytes.as_slice()).unwrap();
+    let pub_key = GE::from_bytes(raw_bytes.as_slice()).unwrap();
     let pub_key_bytes = pub_key.to_bytes(true).to_vec();
     assert_eq!(pub_key_bytes, raw_bytes);
 
@@ -68,12 +65,12 @@ fn test_signing_by_different_crates() {
 
     //Now, let's create a public key of the type used tss-cli using the
     // same data used in recreation, and try to verify the same signature:
-    let master_public_key: Point<Ed25519> = Point::<Ed25519>::from_bytes(&master_pub_key_bytes).unwrap();
+    let master_public_key: GE = GE::from_bytes(&master_pub_key_bytes).unwrap();
     let chain_code_scalar = FE::from_bytes(&master_chain_code_bytes).unwrap();
 
     let zengo_signature: ZengoSignature = ZengoSignature {
-        R: Point::from_bytes(&bip32_signature.as_ref()[..32]).unwrap(),
-        s: Scalar::from_bytes(&bip32_signature.as_ref()[32..]).unwrap(),
+        R: GE::from_bytes(&bip32_signature.as_ref()[..32]).unwrap(),
+        s: FE::from_bytes(&bip32_signature.as_ref()[32..]).unwrap(),
     };
     assert!(zengo_signature.verify(message, &master_public_key).is_ok());
 
@@ -104,7 +101,7 @@ fn test_pub_key_conversions() {
     let message_bytes = hex::decode(message_hex).unwrap();
     let pub_key_x_bigint = BigInt::from_str_radix(pub_key_x_hex, 16).unwrap();
     let pub_key_y_bigint = BigInt::from_str_radix(pub_key_y_hex, 16).unwrap();
-    let zengo_pub_key = Point::<Ed25519>::from_coords(
+    let zengo_pub_key = GE::from_coords(
         &pub_key_x_bigint,
         &pub_key_y_bigint
     ).unwrap();
@@ -134,14 +131,14 @@ pub fn verify_signature(
     let message_bytes = hex::decode(message_hex).unwrap();
     let pub_key_x_bigint = BigInt::from_str_radix(pub_key_x_hex.as_str(), 16).unwrap();
     let pub_key_y_bigint = BigInt::from_str_radix(pub_key_y_hex.as_str(), 16).unwrap();
-    let zengo_pub_key = Point::<Ed25519>::from_coords(
+    let zengo_pub_key = GE::from_coords(
         &pub_key_x_bigint,
         &pub_key_y_bigint
     ).unwrap();
 
     let signature = ZengoSignature {
-        R: Point::from_bytes(signature_r_bytes.as_slice()).unwrap(),
-        s: Scalar::from_bytes(signature_s_bytes.as_slice()).unwrap(),
+        R: GE::from_bytes(signature_r_bytes.as_slice()).unwrap(),
+        s: FE::from_bytes(signature_s_bytes.as_slice()).unwrap(),
     };
 
     assert!(signature.verify(&message_bytes, &zengo_pub_key).is_ok());
@@ -323,7 +320,7 @@ mod hd_derivation {
         //assert_eq!(expected_child_chain_code, child_chain_code_hex);
         //assert_eq!(expected_child_private_key, child_private_key_hex);
 
-        let private_key_scalar = Scalar::<Ed25519>::from_bytes(&parent_private_bytes).unwrap();
+        let private_key_scalar = FE::from_bytes(&parent_private_bytes).unwrap();
         let (child_public_key, _tweak, _child_chain_code) =
             hd_keys::get_hardened_hd_child_by_crate(
                 private_key_scalar,

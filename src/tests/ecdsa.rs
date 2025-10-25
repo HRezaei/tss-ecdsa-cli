@@ -14,13 +14,13 @@ mod hd_derivation {
     };
     use bip32::secp256k1::elliptic_curve::PublicKey;
     use bip32::secp256k1::ecdsa::VerifyingKey;
+    use bip32::secp256k1::Secp256k1;
     use bitcoin::hex::DisplayHex;
     use curv::arithmetic::{Converter};
     use curv::BigInt;
-    use curv::elliptic::curves::{Point, Secp256k1};
     use hex::ToHex;
     use crate::hd_keys;
-    use crate::protocols::ecdsa::{FE};
+    use crate::protocols::ecdsa::{FE, GE};
     use coins_bip32::prelude::{XPub as Bip32CoinsXPub};
     use coins_bip32::primitives::{
         XKeyInfo,
@@ -80,7 +80,7 @@ mod hd_derivation {
 
         let finger_print = KeyFingerprint::from([0u8; 4]);
         let pub_key_bytes: PublicKeyBytes = pub_key.try_into().unwrap();
-        let public_key: PublicKey<bip32::secp256k1::Secp256k1> = PublicKey::from_sec1_bytes(pub_key_bytes.to_vec().as_slice()).unwrap();
+        let public_key: PublicKey<Secp256k1> = PublicKey::from_sec1_bytes(pub_key_bytes.to_vec().as_slice()).unwrap();
         let master_key = ExtendedPublicKey::new(public_key, ExtendedKeyAttrs {
             depth: 0,
             parent_fingerprint: finger_print,
@@ -139,12 +139,12 @@ mod hd_derivation {
             "d6f3c325eb3fda7061983141278484c0dd452a6702fd537b89c09ddf2b6f3238").unwrap();
         let original_y = BigInt::from_hex(
             "4e12adae75c29b29cc094fd3d94aa401ea646104f0d1ae3c59f710ec92640e21").unwrap();
-        let original_public_key: Point<Secp256k1> = Point::<Secp256k1>::from_coords(&original_x, &original_y).expect("Failed to create the point");
+        let original_public_key: GE = GE::from_coords(&original_x, &original_y).expect("Failed to create the point");
 
         let path = "1/2/3";
         let expected_pubkey_x = "e891363052c09185814e92ce7a1a1946631dc53d058a01176fcf27a66b5674c2";
         let expected_pubkey_y = "cfbe0a84b7f7c49b5bb2a48999a761fc6c5dd6526aa79a58d4029865ef7d4a17";
-        let chain_code= Point::<Secp256k1>::generator().to_point();
+        let chain_code= GE::generator().to_point();
         let (public_key_child,
             _tweak_child,
             _chain_code_child
@@ -161,8 +161,7 @@ mod hd_derivation {
             "d6f3c325eb3fda7061983141278484c0dd452a6702fd537b89c09ddf2b6f3238").unwrap();
         let original_y = BigInt::from_hex(
             "4e12adae75c29b29cc094fd3d94aa401ea646104f0d1ae3c59f710ec92640e21").unwrap();
-        let original_public_key: Point<Secp256k1> = Point::<Secp256k1>::
-            from_coords(&original_x, &original_y)
+        let original_public_key: GE = GE::from_coords(&original_x, &original_y)
             .expect("Failed to create the point");
 
         /*
@@ -190,7 +189,7 @@ mod hd_derivation {
         let _expected_tweak = "de7599ecc740b86e30ccc283d77545f1fa48db3edd0bb970601e93a2dde725c4";
 
         let chain_code_scalar = FE::from(1);
-        let chain_code_point = chain_code_scalar.clone() * Point::<Secp256k1>::generator().to_point();
+        let chain_code_point = chain_code_scalar.clone() * GE::generator().to_point();
         let (legacy_child,
             legacy_tweak,
             legacy_chain_code
@@ -328,15 +327,14 @@ mod hd_derivation {
         println!("Y = {}", y);
         //###################################################
         let master_pub_key_bytes = master_pub_key.public_key.serialize();
-        let original_public_key: Point<Secp256k1> = Point::<Secp256k1>
-            ::from_bytes(master_pub_key_bytes.as_slice()).unwrap();
+        let original_public_key: GE = GE::from_bytes(master_pub_key_bytes.as_slice()).unwrap();
 
         println!("\nMaster public key coordinates in our lib:");
         println!("x: {:?}", original_public_key.x_coord().unwrap().to_hex());
         println!("y: {:?}", original_public_key.y_coord().unwrap().to_hex());
 
         //let chain_code_scalar = FE::from(1);
-        //let chain_code_point = chain_code_scalar.clone() * Point::<Secp256k1>::generator().to_point();
+        //let chain_code_point = chain_code_scalar.clone() * GE::generator().to_point();
         //println!("cc len: {:?}", &chain_code_point.to_bytes(true).len());
         // The above code prints 33 whilst bip32 spec defines chain_code as 32 bytes. This is one of
         // the reasons why Trepca's HD differs from third party crates.
@@ -467,7 +465,6 @@ mod hd_derivation {
 pub(crate) mod integration {
     use curv::arithmetic::Converter;
     use curv::BigInt;
-    use curv::elliptic::curves::{Point, Secp256k1};
     use crate::common::DKGSignScheme;
     use crate::protocols::ecdsa::{sum_of_fragment_files, FE, GE};
     use crate::tests::integration::{check_keygen_t_of_n, check_sign_t_of_n_generate, prepare_manager_and_keys};
@@ -476,7 +473,7 @@ pub(crate) mod integration {
         r: &FE,
         s: &FE,
         msg: &BigInt,
-        pk: &Point<Secp256k1>,
+        pk: &GE,
     ) {
         use libsecp256k1::{verify, Message, PublicKey, PublicKeyFormat, Signature};
 
