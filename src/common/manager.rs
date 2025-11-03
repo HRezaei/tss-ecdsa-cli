@@ -15,7 +15,18 @@ use ttlhashmap::TtlHashMap;
 
 use uuid::Uuid;
 
-use crate::common::{error_message, JwtClaims, Entry, Index, Key, ManagerError, Params, PartySignup, PartySignupRequestBody, SigningPartySignup};
+use crate::common::{
+    error_message,
+    JwtClaims,
+    Entry,
+    Index,
+    Key,
+    ManagerError,
+    Params,
+    PartySignup,
+    PartySignupRequestBody,
+    SigningPartySignup
+};
 use crate::common::signing_room::SigningRoom;
 
 const TSS_CLI_MANAGER_TTL_VAR: &str = "TSS_CLI_MANAGER_TTL";
@@ -174,7 +185,6 @@ pub async fn run_manager() -> Result<Rocket<Ignite>, rocket::Error> {
             exit(1);
         }
     }
-
 }
 
 #[post("/get", format = "json", data = "<request>")]
@@ -309,7 +319,6 @@ fn signup_keygen(
                     }))
                 }
             }
-
         }
         Err(error) => {
             Json(Err(ManagerError{error: error_message(LOCKING_ERROR_MESSAGE, &error.to_string())}))

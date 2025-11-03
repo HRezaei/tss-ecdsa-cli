@@ -262,7 +262,7 @@ pub fn postb<T>(client: &Client, path: &str, body: T) -> Option<String>
                     }
                     other_codes => {
                         if i==retries {
-                            eprintln!("{} Retries failed for {} wuth code {}", retries, addr, other_codes);
+                            eprintln!("{} Retries failed for {} with code {}", retries, addr, other_codes);
                         }
                     }
                 }

@@ -136,12 +136,12 @@ fn main() {
                     .required(true)
                     .index(1)
                     .takes_value(true)
-                    .help("Source keys file"))
-                .arg(Arg::with_name("Source keys file")
+                    .help("Source key file to read and convert."))
+                .arg(Arg::with_name("output_file")
                     .required(true)
                     .index(2)
                     .takes_value(true)
-                    .help("Output keys file")),
+                    .help("Output keys file to which converted file will be written.")),
             SubCommand::with_name("export").about("Exports the key for recovery.")
                 .arg(Arg::with_name("input_dir")
                     .required(true)
