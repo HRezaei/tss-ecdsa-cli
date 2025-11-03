@@ -14,7 +14,7 @@ use crate::protocols::{generate_shared_chain_code, verify_dlog_proofs};
 use crate::eddsa::{CURVE_NAME, FE, GE};
 
 
-pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) {
+pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) -> Result<(), String> {
     let THRESHOLD: u16 = params[0].parse::<u16>().unwrap();
     let PARTIES: u16 = params[1].parse::<u16>().unwrap();
     let client = Client::new(addr.clone());
@@ -31,8 +31,15 @@ pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) {
         threshold: THRESHOLD.to_string(),
         parties: PARTIES.to_string(),
     };
-    let (party_num_int, uuid) = keygen_signup(&client, &tn_params, CURVE_NAME);
-    println!("number: {:?}, uuid: {:?}, curve: {:?}", party_num_int, uuid, CURVE_NAME);
+    let (party_num_int, uuid) = match keygen_signup(&client, &tn_params, CURVE_NAME) {
+        Ok((party_num_int, uuid)) => {
+            println!("number: {:?}, uuid: {:?}, curve: {:?}", party_num_int, uuid, CURVE_NAME);
+            (party_num_int, uuid)
+        }
+        Err(error) => {
+            return Err(format!("Signup for keygen failed: {}", error));
+        }
+    };
 
     let party_keys = Keys::phase1_create(party_num_int);
     let (bc_i, decom_i) = party_keys.phase1_broadcast();
@@ -46,7 +53,7 @@ pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) {
         parameters.share_count as usize
     );
 
-    // send commitment to ephemeral public keys, get round 1 commitments of other parties
+    // send commitment to ephemeral public keys, get round 1's commitments of other parties
     assert!(broadcast(
         &client,
         party_num_int,
@@ -274,6 +281,6 @@ pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) {
     ))
         .unwrap();
 
-    println!("Keys data written to file: {:?}", keys_file_path);
     fs::write(keys_file_path, keygen_json).expect("Unable to save !");
+    Ok(())
 }

@@ -477,7 +477,7 @@ pub fn poll_for_p2p(
     ans_vec
 }
 
-pub fn keygen_signup(client: &Client, params: &Params, curve_name: &str) -> (u16, String) {
+pub fn keygen_signup(client: &Client, params: &Params, curve_name: &str) -> Result<(u16, String), String> {
     match client.post( "signupkeygen", (params, curve_name)) {
         Some(res_body) => {
             match serde_json::from_str(&res_body) {
@@ -485,20 +485,18 @@ pub fn keygen_signup(client: &Client, params: &Params, curve_name: &str) -> (u16
                     match result {
                         Ok(PartySignup { number, uuid }) => {
                             if number < 1 || number > params.parties.parse::<u16>().unwrap() {
-                                println!("Manager returned an invalid party ID: {}", number);
-                                exit(1);
+                                Err(format!("Manager returned an invalid party ID: {}", number))
+                            } else {
+                                Ok((number, uuid))
                             }
-                            (number, uuid)
                         },
                         Err(ManagerError { error }) => {
-                            println!("{}: {}", MANAGER_ERROR_MESSAGE, error);
-                            exit(1);
+                            Err(format!("{}: {}", MANAGER_ERROR_MESSAGE, error))
                         },
                     }
                 },
                 Err(error) => {
-                    println!("{}: {}", MANAGER_ERROR_MESSAGE, error);
-                    exit(1);
+                    Err(format!("{}: {}", MANAGER_ERROR_MESSAGE, error))
                 }
             }
         }

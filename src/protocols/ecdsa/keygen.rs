@@ -19,7 +19,7 @@ use crate::protocols::{generate_shared_chain_code};
 use crate::ecdsa::{CURVE_NAME, FE, GE};
 
 
-pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
+pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) -> Result<(), String> {
     let THRESHOLD: u16 = params[0].parse::<u16>().unwrap();
     let PARTIES: u16 = params[1].parse::<u16>().unwrap();
 
@@ -38,9 +38,15 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
         parties: PARTIES.to_string(),
     };
 
-    let (party_num_int, uuid) = keygen_signup(&client, &tn_params, CURVE_NAME);
-
-    println!("number: {:?}, uuid: {:?}, curve: {:?}", party_num_int, uuid, CURVE_NAME);
+    let (party_num_int, uuid) = match keygen_signup(&client, &tn_params, CURVE_NAME) {
+        Ok((party_num_int, uuid)) => {
+            println!("number: {:?}, uuid: {:?}, curve: {:?}", party_num_int, uuid, CURVE_NAME);
+            (party_num_int, uuid)
+        }
+        Err(error) => {
+            return Err(format!("Signup for keygen failed: {}", error));
+        }
+    };
 
     let party_keys = Keys::create_safe_prime(party_num_int);
 
@@ -61,7 +67,7 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
         exit(1);
     }
 
-    // send commitment to ephemeral public keys, get round 1 commitments of other parties
+    // send commitment to ephemeral public keys, get round 1's commitments of other parties
     assert!(broadcast(
         &client,
         party_num_int,
@@ -277,6 +283,6 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
         y_sum,
     ))
     .unwrap();
-    println!("Keys data written to file: {:?}", keysfile_path);
     fs::write(&keysfile_path, keygen_json).expect("Unable to save !");
+    Ok(())
 }

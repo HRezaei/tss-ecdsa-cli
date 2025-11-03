@@ -260,10 +260,16 @@ where
                 .unwrap_or("")
                 .split("/")
                 .collect();
-            match curve {
+            match match curve {
                 "ecdsa" => ecdsa::keygen::run_keygen(&addr, &keysfile_path, &params),
                 "eddsa" => eddsa::keygen::run_keygen(&addr, &keysfile_path, &params),
-                _ => {}
+                _ => Err("Invalid curve type specified.".to_string())
+            } {
+                Ok(_) => println!("Keys data written to file: {:?}", keysfile_path),
+                Err(error) => {
+                    eprintln!("Command keygen failed with error: {}", error);
+                    return 1;
+                }
             }
 
         }
