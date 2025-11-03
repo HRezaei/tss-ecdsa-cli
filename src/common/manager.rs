@@ -4,7 +4,7 @@ use std::process::exit;
 use std::sync::RwLock;
 use std::time::Duration;
 use jsonwebtoken::{decode, Algorithm, DecodingKey, TokenData, Validation, decode_header};
-use rocket::{Ignite, post, Rocket, routes, State, async_trait, Request};
+use rocket::{Ignite, post, Rocket, routes, State, async_trait, Request, Build, Error};
 use rocket::http::Status;
 use rocket::outcome::Outcome;
 use rocket::request::FromRequest;
@@ -161,7 +161,16 @@ fn validate_t_n_params(num_parties: u16, threshold: u16) -> Result<bool, String>
 }
 
 #[rocket::main]
-pub async fn run_manager() -> Result<Rocket<Ignite>, rocket::Error> {
+pub async fn run_manager() -> Result<Rocket<Ignite>, Error> {
+    match build_manager() {
+        Ok(manager) => {
+            manager.launch().await
+        }
+        Err(error) => Err(error),
+    }
+}
+
+pub fn build_manager() -> Result<Rocket<Build>, Error> {
     //     let mut my_config = Config::development();
     //     my_config.set_port(18001);
     let ttl_result = env::var(TSS_CLI_MANAGER_TTL_VAR)
@@ -173,12 +182,10 @@ pub async fn run_manager() -> Result<Rocket<Ignite>, rocket::Error> {
 
             let user_secret_keys: Result<HashMap<String, String>, bool> = parse_user_secrets_from_env();
 
-            rocket::build()
+            Ok(rocket::build()
                 .mount("/", routes![get, set, signup_keygen, signup_sign])
                 .manage(db_mtx)
-                .manage(user_secret_keys)
-                .launch()
-                .await
+                .manage(user_secret_keys))
         }
         Err(error) => {
             eprintln!("Error in parsing env var: {}, {}. It must be an integer.", TSS_CLI_MANAGER_TTL_VAR, error);

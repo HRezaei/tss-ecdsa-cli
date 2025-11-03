@@ -26,6 +26,16 @@ mod protocols;
 mod tests;
 
 fn main() {
+    let args: Vec<String> = env::args().collect();
+    let exit_code = run_main(args);
+    std::process::exit(exit_code);
+}
+
+fn run_main<I, T>(args: I) -> i32
+where
+    I: IntoIterator<Item = T>,
+    T: Into<std::ffi::OsString> + Clone,
+{
     let matches = App::new("TSS CLI Utility")
         .version("0.2.2")
         .author("Kaspars Sprogis <darklow@gmail.com>")
@@ -160,7 +170,7 @@ fn main() {
                     .takes_value(true)
                     .help("How many prime numbers should be checked?"))
         ])
-        .get_matches();
+        .get_matches_from(args);
 
     let rocket_default_port = env::var("ROCKET_PORT").unwrap_or("8000".to_string());
     let manager_default_address = "http://127.0.0.1:".to_string() + rocket_default_port.as_str();
@@ -272,4 +282,5 @@ fn main() {
         }
         _ => {}
     }
+    0
 }
