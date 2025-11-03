@@ -9,7 +9,7 @@ extern crate paillier;
 extern crate reqwest;
 extern crate serde_json;
 
-use std::env;
+use std::{env, fs};
 use clap::{App, AppSettings, Arg, SubCommand};
 
 use common::{hd_keys, manager};
@@ -140,7 +140,13 @@ where
                     .takes_value(true)
                     .default_value("legacy")
                     .possible_values(&["legacy", "bip32"])
-                    .help("HD key derivation variant.")),
+                    .help("HD key derivation variant."))
+                .arg(Arg::with_name("output")
+                    .short("o")
+                    .long("output")
+                    .takes_value(true)
+                    .default_value("")
+                    .help("Path of the file in which output is written.")),
             SubCommand::with_name("convert_curv_07_to_09").about("Convert format of store files from v0.1.0 to v0.2.0")
                 .arg(Arg::with_name("input_file")
                     .required(true)
@@ -232,6 +238,12 @@ where
                 _ => serde_json::Value::String("".to_string())
             };
             println!("{}", result.to_string());
+            match sub_matches.value_of("output") {
+                None => {}
+                Some(file_path) => {
+                    fs::write(file_path, result.to_string()).expect("Unable to save !");
+                }
+            }
         }
         ("manager", Some(_matches)) => {
             let _ = manager::run_manager();
