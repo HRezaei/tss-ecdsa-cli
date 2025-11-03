@@ -383,3 +383,42 @@ pub mod integration {
         }
     }
 }
+
+
+pub mod unit_tests{
+    use crate::common::DKGSignScheme;
+    use crate::protocols::HdImplementation;
+    use crate::tests::offline_utils::{check_keygen_t_of_n_offline, check_sign_t_of_n_generate_offline};
+
+    #[test]
+    fn test_keygen_1_of_3() {
+        check_keygen_t_of_n_offline(1, 3, DKGSignScheme::EdDSA);
+    }
+
+    #[test]
+    fn test_sign_1_of_3_hd_legacy() {
+        check_sign_t_of_n_generate_offline(1, 3,
+                                           DKGSignScheme::EdDSA,
+                                           "1/2/3".to_string(),
+                                           HdImplementation::Legacy
+        );
+    }
+
+    #[test]
+    fn test_sign_1_of_3_hd_bip32() {
+        check_sign_t_of_n_generate_offline(1, 3,
+                                           DKGSignScheme::EdDSA,
+                                           "1/2/3".to_string(),
+                                           HdImplementation::Bip32
+        );
+    }
+
+    #[test]
+    fn test_sign_1_of_3_without_hd() {
+        check_sign_t_of_n_generate_offline(1, 3,
+                                           DKGSignScheme::EdDSA,
+                                           "".to_string(),
+                                           HdImplementation::Bip32
+        );
+    }
+}

@@ -9,6 +9,10 @@ mod eddsa;
 mod ecdsa;
 mod integration;
 
+pub(crate) mod offline_utils;
+
+pub(crate) const CLI_NAME: &str = "tss_cli";
+
 // Rust runs tests in parallel. We want to prevent separate tests from using the same port:
 static MANAGER_PORT_COUNTER: AtomicUsize = AtomicUsize::new(integration::MANAGER_PORT as usize);
 

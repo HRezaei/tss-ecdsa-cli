@@ -569,3 +569,71 @@ pub(crate) mod integration {
         }
     }
 }
+
+#[cfg(test)]
+mod unit_tests {
+    use crate::common::DKGSignScheme;
+    use crate::tests::offline_utils::{
+        check_keygen_t_of_n_offline,
+        check_sign_t_of_n_generate_offline,
+        prepare_manager_and_keys_offline
+    };
+    use crate::protocols::HdImplementation;
+    use crate::run_main;
+    use crate::tests::{TestResourcesCleanUp, CLI_NAME};
+
+    #[test]
+    fn test_keygen_1_of_3() {
+        check_keygen_t_of_n_offline(1, 3, DKGSignScheme::ECDSA);
+    }
+
+    #[test]
+    fn test_sign_1_of_3_hd_legacy() {
+        check_sign_t_of_n_generate_offline(1, 3,
+                                           DKGSignScheme::ECDSA,
+                                           "1/2/3".to_string(),
+                                           HdImplementation::Legacy
+        );
+    }
+
+    #[test]
+    fn test_sign_1_of_3_hd_bip32() {
+        check_sign_t_of_n_generate_offline(1, 3,
+                                           DKGSignScheme::ECDSA,
+                                           "1/2/3".to_string(),
+                                           HdImplementation::Bip32
+        );
+    }
+
+    #[test]
+    fn test_sign_1_of_3_without_hd() {
+        check_sign_t_of_n_generate_offline(1, 3,
+                                           DKGSignScheme::ECDSA,
+                                           "".to_string(),
+                                           HdImplementation::Bip32
+        );
+    }
+
+    #[test]
+    fn test_safety_check_command_offline() {
+        if let Some(keyfiles) =
+            prepare_manager_and_keys_offline(1, 3, DKGSignScheme::ECDSA) {
+
+            let key_file = keyfiles.first().unwrap().clone();
+            let arguments = vec![
+                CLI_NAME.to_string(),
+                "safety_check".to_string(),
+                key_file
+            ];
+            let _cleanup = TestResourcesCleanUp {
+                keyfiles,
+                manager: None,
+            };
+            let output = run_main(arguments);
+            assert_eq!(output, 0);
+        }
+        else {
+            assert!(false, "Failed to prepare manager and key files.")
+        };
+    }
+}

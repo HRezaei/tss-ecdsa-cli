@@ -32,6 +32,9 @@ bip32 = "0.5.3"
 coins-bip32 = "0.12.0"
 bitcoin = "0.31"
 ed25519-bip32-core = "0.1.1"
+# These are used in offline unit tests, but has to be here because loaded in common modules:
+tokio = "1.45.1"
+
 
 [dependencies.ed25519-bip32]
 git = "https://github.com/HRezaei/rust-ed25519-bip32"
@@ -50,6 +53,9 @@ branch = "master"
 [dependencies.multi-party-eddsa]
 git = "https://github.com/HRezaei/multi-party-eddsa"
 branch = "feature/curv-0.9-examples"
+
+[dev-dependencies]
+gag = "1.0"
 
 [patch.crates-io]
 rust-gmp = { version = "0.5.1", features = ["serde_support"], git = "https://github.com/KZen-networks/rust-gmp" }

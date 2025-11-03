@@ -16,17 +16,18 @@ use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
 use curv::elliptic::curves::Curve;
 use jsonwebtoken::{encode, EncodingKey, Header};
 use reqwest::blocking::Client as RequestClient;
+pub use rocket::local::asynchronous::Client as OfflineClient;
 use serde::{Deserialize, Serialize};
 use rand::{rngs::OsRng, TryRngCore};
 use reqwest::header::{HeaderMap, AUTHORIZATION};
 use reqwest::StatusCode;
+use rocket::http::{ContentType, Status};
 use sha2::{Sha256, Digest};
 use crate::protocols::{ecdsa, eddsa};
 use crate::protocols::ecdsa::ECDSAParameters;
 use crate::protocols::eddsa::EdDSAParameters;
 
 pub type Key = String;
-
 pub(crate) const MAX_FIRST_PRIMES: usize =  2_i64.pow(25) as usize;
 pub(crate) const MANAGER_ERROR_MESSAGE: &str = "Manager returned error";
 const INVALID_KEY_LEN_ERROR: &str = "Key length is invalid!";
@@ -42,6 +43,7 @@ pub struct Client {
     address: String,
     api_key: String,
     secret_key: String,
+    is_online: bool
 }
 
 #[allow(dead_code)]
@@ -51,6 +53,12 @@ pub const HTTP_AUTH_JWT_EXPIRY_VAR: &str = "TSS_HTTP_AUTH_JWT_TTL";
 pub const HTTP_AUTH_JWT_EXPIRY_DEFAULT: &str = "10";
 const HTTP_AUTH_JWT_SECRET_VAR: &str = "TSS_PARTY_JWT_SECRET";
 pub const LOG_LEVEL_ENV_VAR: &str = "TSS_LOG_LEVEL";
+pub const OFFLINE_MANAGER_ADDRESS: &str = "no_address/work_offline"; // Possible values: online, offline
+
+use rocket::futures::executor::block_on;
+use tokio::sync::OnceCell;
+
+pub static OFFLINE_CLIENT: OnceCell<OfflineClient> = OnceCell::const_new();
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct AEAD {
@@ -118,6 +126,10 @@ pub fn error_message(normal_message: &str, debug_message: &str) -> String {
     }
 }
 
+pub fn get_offline_client() -> &'static OfflineClient {
+    OFFLINE_CLIENT.get().expect("Client not initialized")
+}
+
 impl Client {
     pub fn new(address: String) -> Self {
         let api_key = env::var(PARTY_HTTP_AUTH_APIKEY_VAR).unwrap_or_else(|_|{
@@ -130,11 +142,14 @@ impl Client {
             "anonymous_secret_key".to_string()
         });
 
+        let is_online = address!=OFFLINE_MANAGER_ADDRESS;
+
         Self {
             client: RequestClient::new(),
             address,
             api_key,
             secret_key,
+            is_online,
         }
     }
 
@@ -165,6 +180,58 @@ impl Client {
         }
     }
 
+    fn post<T>(&self, path: &str, body: T) -> Option<String>
+    where
+        T: serde::ser::Serialize,{
+        match self.is_online {
+            true => {
+                postb(self, path, body)
+            },
+            false => {
+                let offline_client = get_offline_client();
+                block_on(self.post_offline(offline_client, path, body))
+            }
+        }
+    }
+
+    async fn post_offline<T>(&self, offline_client: &OfflineClient, path: &str, body: T) -> Option<String>
+    where
+        T: serde::ser::Serialize,{
+        let retries = 3;
+        let retry_delay = time::Duration::from_millis(250);
+        let jwt_token = self.generate_jwt();
+        let request_address = format!("/{}", path);
+        let bearer = format!("Bearer {}", jwt_token);
+        // Create the headers with the API key
+        let header = rocket::http::Header::new(
+            AUTHORIZATION.as_str(),
+            bearer
+        );
+
+        let json_body = serde_json::to_string(&body).expect("serialize to JSON");
+        for i in 1..retries {
+            let response = offline_client.post(request_address.clone())
+                .header(header.clone())
+                .header(ContentType::JSON)
+                .body(json_body.clone())
+                .dispatch();
+
+            let local_response = response.await;
+            let status = local_response.status();
+            if status == Status::Ok {
+                return Some(local_response.into_string().await.unwrap());
+            } else if status == Status::Unauthorized {
+                eprintln!("Unauthorized request for {}", path);
+                return None;
+            } else {
+                if i==retries {
+                    eprintln!("{} Retries failed for {} with code {}", i, path, status);
+                }
+            }
+            thread::sleep(retry_delay);
+        }
+        None
+    }
 }
 
 // Define the claims structure expected in the JWT
@@ -295,7 +362,7 @@ pub fn broadcast(
         key: key.clone(),
         value: data,
     };
-    let res_body = postb(&client, "set", entry).unwrap();
+    let res_body = client.post( "set", entry).unwrap();
     serde_json::from_str(&res_body).unwrap()
 }
 
@@ -314,7 +381,7 @@ pub fn sendp2p(
         value: data,
     };
 
-    let res_body = postb(&client, "set", entry).unwrap();
+    let res_body = client.post( "set", entry).unwrap();
     serde_json::from_str(&res_body).unwrap()
 }
 
@@ -327,7 +394,7 @@ pub fn poll_for_broadcasts(
     sender_uuid: String,
 ) -> Vec<String> {
     let mut ans_vec = Vec::new();
-    let timeout = std::env::var(TSS_CLI_POLL_TIMEOUT_VAR)
+    let timeout = env::var(TSS_CLI_POLL_TIMEOUT_VAR)
         .unwrap_or(TSS_CLI_POLL_TIMEOUT_DEFAULT.to_string()).parse::<u64>().unwrap();
     for i in 1..=n {
         if i != party_num {
@@ -337,7 +404,7 @@ pub fn poll_for_broadcasts(
             loop {
                 // add delay to allow the server to process request:
                 thread::sleep(delay);
-                let res_body = postb(&client, "get", index.clone()).unwrap();
+                let res_body = client.post( "get", index.clone()).unwrap();
                 let answer: Result<Entry, ManagerError> = serde_json::from_str(&res_body)
                     .unwrap_or_else(|e| {
                         println!("{}", error_message("Error in calling manager",
@@ -388,8 +455,7 @@ pub fn poll_for_p2p(
                 // add delay to allow the server to process request:
                 thread::sleep(delay);
 
-                let res_body = postb(&client, "get", index.clone()).unwrap();
-                //let res_body = postb(&client, "get", index.clone()).unwrap();
+                let res_body = client.post( "get", index.clone()).unwrap();
                 let answer: Result<Entry, ManagerError> = serde_json::from_str(&res_body).unwrap();
                 match answer {
                     Ok(answer) => {
@@ -412,7 +478,7 @@ pub fn poll_for_p2p(
 }
 
 pub fn keygen_signup(client: &Client, params: &Params, curve_name: &str) -> (u16, String) {
-    match postb(&client, "signupkeygen", (params, curve_name)) {
+    match client.post( "signupkeygen", (params, curve_name)) {
         Some(res_body) => {
             match serde_json::from_str(&res_body) {
                 Ok(result) => {
@@ -456,7 +522,7 @@ pub fn signup(path: &str, client: &Client, params: &Params, room_id: String, par
     let delay = time::Duration::from_millis(100);
     let timeout = std::env::var("TSS_CLI_SIGNUP_TIMEOUT")
         .unwrap_or("30".to_string()).parse::<u64>().unwrap();
-    let res_body = postb(&client, path, request_body.clone()).unwrap();
+    let res_body = client.post( path, request_body.clone()).unwrap();
     let answer: Result<SigningPartySignup, ManagerError> = serde_json::from_str(&res_body).unwrap();
     let (output, total_parties) = match answer {
         Ok(SigningPartySignup{party_order, party_uuid, room_uuid, total_joined}) => {
@@ -470,7 +536,7 @@ pub fn signup(path: &str, client: &Client, params: &Params, room_id: String, par
             while party_signup.uuid.is_empty() {
                 thread::sleep(delay);
                 request_body.party_uuid = party_uuid.clone();
-                let res_body = postb(&client, path, request_body.clone()).unwrap();
+                let res_body = client.post( path, request_body.clone()).unwrap();
                 let answer: Result<SigningPartySignup, ManagerError> = serde_json::from_str(&res_body).unwrap();
                 match answer {
                     Ok(SigningPartySignup{party_order, party_uuid, room_uuid, total_joined}) => {
