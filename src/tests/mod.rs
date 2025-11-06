@@ -45,7 +45,6 @@ fn get_cli_executable_path() -> String {
     if cfg!(debug_assertions) {
         "./target/debug/tss_cli".to_string()
     } else {
-        println!("RELEASERELEASE");
         "./target/release/tss_cli".to_string()
     }
 }

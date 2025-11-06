@@ -145,7 +145,6 @@ where
                     .short("o")
                     .long("output")
                     .takes_value(true)
-                    .default_value("")
                     .help("Path of the file in which output is written.")),
             SubCommand::with_name("convert_curv_07_to_09").about("Convert format of store files from v0.1.0 to v0.2.0")
                 .arg(Arg::with_name("input_file")
