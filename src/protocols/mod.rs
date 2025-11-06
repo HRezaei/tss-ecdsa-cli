@@ -3,7 +3,6 @@ use curv::cryptographic_primitives::hashing::Digest;
 use curv::cryptographic_primitives::proofs::sigma_dlog::DLogProof;
 use curv::elliptic::curves::{Curve, Scalar};
 use crate::common::Client;
-use crate::eddsa::signer::exchange_data;
 
 pub mod ecdsa;
 pub mod eddsa;
@@ -62,28 +61,26 @@ fn generate_shared_chain_code<E: Curve, H: Digest + Clone>(client: Client,
     let dlog_proof: DLogProof<E, H> = DLogProof::prove(&chain_code_i);
 
     // round 0: send dlog proof
-    let dlog_proof_vec = exchange_data(
-        client.clone(),
+    let dlog_proof_vec = client.exchange_data(
         party_num_int,
         parties_num,
         uuid.clone(),
         "round0_chain_code",
         delay,
-        dlog_proof
+        dlog_proof,
     );
 
     verify_dlog_proofs(share_count, &dlog_proof_vec, parties_num as usize)
         .expect("bad dlog proof for chain code");
 
     // round 1: send chain code and collect chain code of all parties
-    let chain_codes = exchange_data(
-        client,
+    let chain_codes = client.exchange_data(
         party_num_int,
         parties_num,
         uuid,
         "round1_chain_code",
         delay,
-        chain_code_i
+        chain_code_i,
     );
 
     let (head, tail) = chain_codes.split_at(1);

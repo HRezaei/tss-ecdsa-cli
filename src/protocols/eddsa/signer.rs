@@ -10,7 +10,20 @@ use multi_party_eddsa::protocols::thresholdsig::{
     EphemeralKey, EphemeralSharedKeys, KeyGenBroadcastMessage1, Keys, LocalSig, Parameters
 };
 use sha2::{Sha512, Digest};
-use crate::common::{AEAD, aes_decrypt, aes_encrypt, AES_KEY_BYTES_LEN, broadcast, Client, hd_keys, Params, PartySignup, poll_for_broadcasts, poll_for_p2p, sendp2p, sha256_digest, signup};
+use crate::common::{
+    AEAD,
+    aes_decrypt,
+    aes_encrypt,
+    AES_KEY_BYTES_LEN,
+    Client,
+    hd_keys,
+    Params,
+    PartySignup,
+    poll_for_p2p,
+    sendp2p,
+    sha256_digest,
+    signup
+};
 use crate::eddsa::{CURVE_NAME, FE, GE};
 use crate::protocols::eddsa::EdDSAParameters;
 use crate::protocols::{HdImplementation, INVALID_FRAGMENT_FILE_ERROR};
@@ -95,14 +108,13 @@ pub fn run_signer(manager_address:String,
     //I assume sharing party_id of signers is not a risk for security of protocol because
     //similar thing is done in ECDSA:
     //https://github.com/ZenGo-X/multi-party-ecdsa/blob/7d8bd416f96775a8a1d7ea4b6361e539b091f063/examples/gg18_sign_client.rs#L70
-    let parties_index_vec = exchange_data(
-        client.clone(),
+    let parties_index_vec = client.exchange_data(
         party_num_int,
         total_parties,
         uuid.clone(),
         "round0",
         delay,
-        party_id - 1
+        party_id - 1,
     );
 
     let (_eph_keys_vec, eph_shared_keys_vec, R, eph_vss_vec) = eph_keygen_t_n_parties(
@@ -123,8 +135,7 @@ pub fn run_signer(manager_address:String,
         &shared_keys,
     );
 
-    let local_sig_vec = exchange_data(
-        client.clone(),
+    let local_sig_vec = client.exchange_data(
         party_num_int,
         total_parties,
         uuid,
@@ -263,42 +274,27 @@ pub fn eph_keygen_t_n_parties(
     let mut R_vec = Vec::new();
     let (bc_i, blind) = eph_party_key.phase1_broadcast();
 
-    assert!(broadcast(
-        &client,
-        party_num_int,
-        "eph_keygen_round1",
-        serde_json::to_string(&(bc_i.clone(), blind.clone(), eph_party_key.R_i.clone())).unwrap(),
-        uuid.clone()
-    )
-        .is_ok());
-    let round1_ans_vec = poll_for_broadcasts(
-        &client,
+    let round1_ans_vec = client.exchange_data(
         party_num_int,
         n as u16,
-        delay,
-        "eph_keygen_round1",
         uuid.clone(),
+        "eph_keygen_round1",
+        delay,
+        serde_json::to_string(&(bc_i.clone(), blind.clone(), eph_party_key.R_i.clone())).unwrap(),
     );
-
-    let mut j = 0;
     let mut enc_keys: HashMap<u16, Vec<u8>> = HashMap::new();
-    for i in 1..=n {
-        if i == party_num_int {
-            bc1_vec.push(bc_i.clone());
-            blind_vec.push(blind.clone());
-            R_vec.push(eph_party_key.R_i.clone());
-        } else {
-            let (bc1_j, blind_j, R_i_j) =
-                serde_json::from_str::<(KeyGenBroadcastMessage1, BigInt, GE)>(&round1_ans_vec[j]).unwrap();
-            bc1_vec.push(bc1_j);
-            blind_vec.push(blind_j);
-            R_vec.push(R_i_j.clone());
+    for j in 1..=n as usize {
+        let (bc1_j, blind_j, R_i_j) =
+            serde_json::from_str::<(KeyGenBroadcastMessage1, BigInt, GE)>(&round1_ans_vec[j -1]).unwrap();
+        bc1_vec.push(bc1_j);
+        blind_vec.push(blind_j);
+        R_vec.push(R_i_j.clone());
+        if j != party_num_int as usize {
             let key_bn: BigInt = (R_i_j * eph_party_key.r_i.clone()).x_coord().unwrap();
             let key_bytes = BigInt::to_bytes(&key_bn);
             let mut template: Vec<u8> = vec![0u8; AES_KEY_BYTES_LEN - key_bytes.len()];
             template.extend_from_slice(&key_bytes[..]);
-            enc_keys.insert(parties[(i-1) as usize], template);
-            j += 1;
+            enc_keys.insert(parties[(j -1) as usize], template);
         }
     }
 
@@ -313,33 +309,18 @@ pub fn eph_keygen_t_n_parties(
         .expect("invalid key");
 
     // round 2: send vss commitments
-    assert!(broadcast(
-        &client,
-        party_num_int,
-        "eph_keygen_round2",
-        serde_json::to_string(&vss_scheme).unwrap(),
-        uuid.clone()
-    )
-        .is_ok());
-    let round2_ans_vec = poll_for_broadcasts(
-        &client,
+    let round2_ans_vec = client.exchange_data(
         party_num_int,
         n as u16,
-        delay,
-        "eph_keygen_round2",
         uuid.clone(),
+        "eph_keygen_round2",
+        delay,
+        serde_json::to_string(&vss_scheme).unwrap(),
     );
-
-    let mut j = 0;
     let mut vss_scheme_vec: Vec<VerifiableSS<Ed25519>> = Vec::new();
-    for i in 1..=n {
-        if i == party_num_int {
-            vss_scheme_vec.push(vss_scheme.clone());
-        } else {
-            let vss_scheme_j: VerifiableSS<Ed25519> = serde_json::from_str(&round2_ans_vec[j]).unwrap();
-            vss_scheme_vec.push(vss_scheme_j);
-            j += 1;
-        }
+    for j in 0..n as usize {
+        let vss_scheme_j: VerifiableSS<Ed25519> = serde_json::from_str(&round2_ans_vec[j]).unwrap();
+        vss_scheme_vec.push(vss_scheme_j);
     }
 
     //////////////////////////////////////////////////////////////////////////////
@@ -365,7 +346,6 @@ pub fn eph_keygen_t_n_parties(
                 uuid.clone()
             )
                 .is_ok());
-            j += 1;
         }
     }
 
@@ -415,73 +395,19 @@ pub fn eph_keygen_t_n_parties(
         .expect("invalid vss");
 
     // round 4: send shared key
-    assert!(broadcast(
-        &client,
-        party_num_int,
-        "eph_keygen_round4",
-        serde_json::to_string(&eph_shared_key).unwrap(),
-        uuid.clone()
-    )
-        .is_ok());
-    let round4_ans_vec = poll_for_broadcasts(
-        &client,
+    let round4_ans_vec = client.exchange_data(
         party_num_int,
         n as u16,
-        delay,
-        "eph_keygen_round4",
         uuid.clone(),
+        "eph_keygen_round4",
+        delay,
+        serde_json::to_string(&eph_shared_key).unwrap(),
     );
-
-    let mut j = 0;
-    for i in 1..=n {
-        if i == party_num_int {
-            shared_keys_vec.push(eph_shared_key.clone());
-        } else {
-            let shared_key_j:EphemeralSharedKeys = serde_json::from_str(&round4_ans_vec[j]).unwrap();
-            shared_keys_vec.push(shared_key_j);
-            j += 1;
-        }
+    for j in 0..n as usize {
+        let shared_key_j: EphemeralSharedKeys = serde_json::from_str(&round4_ans_vec[j]).unwrap();
+        shared_keys_vec.push(shared_key_j);
     }
 
     (eph_party_key, shared_keys_vec, R_sum, vss_scheme_vec)
-}
-
-
-
-pub fn exchange_data<T>(client:Client, party_num:u16, n:u16, uuid:String, round: &str, delay: Duration, data:T) -> Vec<T>
-    where
-        T: Clone + serde::de::DeserializeOwned + serde::Serialize,
-{
-    assert!(broadcast(
-        &client,
-        party_num,
-        &round,
-        serde_json::to_string(&data).unwrap(),
-        uuid.clone()
-    )
-        .is_ok());
-    let round_ans_vec = poll_for_broadcasts(
-        &client,
-        party_num,
-        n,
-        delay,
-        &round,
-        uuid.clone(),
-    );
-
-    let json_answers = round_ans_vec.clone();
-    let mut j = 0;
-    let mut answers: Vec<T> = Vec::new();
-    for i in 1..=n {
-        if i == party_num {
-            answers.push(data.clone());
-        } else {
-            let data_j: T = serde_json::from_str::<T>(&json_answers[j].clone()).unwrap();
-            answers.push(data_j);
-            j += 1;
-        }
-    }
-
-    answers
 }
 

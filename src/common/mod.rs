@@ -232,6 +232,50 @@ impl Client {
         }
         None
     }
+
+    pub fn exchange_data<T>(
+        &self,
+        party_num:u16,
+        n:u16, uuid:String,
+        round: &str,
+        delay: Duration,
+        data:T,
+    ) -> Vec<T>
+    where
+        T: Clone + serde::de::DeserializeOwned + serde::Serialize,
+    {
+        assert!(broadcast(
+            &self,
+            party_num,
+            &round,
+            serde_json::to_string(&data).unwrap(),
+            uuid.clone()
+        )
+            .is_ok());
+        let round_ans_vec = poll_for_broadcasts(
+            &self,
+            party_num,
+            n,
+            delay,
+            &round,
+            uuid.clone(),
+        );
+
+        let json_answers = round_ans_vec.clone();
+        let mut j = 0;
+        let mut answers: Vec<T> = Vec::new();
+        for i in 1..=n {
+            if i == party_num {
+                answers.push(data.clone());
+            } else {
+                let data_j: T = serde_json::from_str::<T>(&json_answers[j].clone()).unwrap();
+                answers.push(data_j);
+                j += 1;
+            }
+        }
+
+        answers
+    }
 }
 
 // Define the claims structure expected in the JWT
