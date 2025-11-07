@@ -27,11 +27,16 @@ mod tests;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let exit_code = run_main(args);
-    std::process::exit(exit_code);
+    match run_main(args) {
+        Ok(_) => (),
+        Err(error) => {
+            eprintln!("{}", error);
+            std::process::exit(1);
+        }
+    };
 }
 
-fn run_main<I, T>(args: I) -> i32
+fn run_main<I, T>(args: I) -> Result<(), String>
 where
     I: IntoIterator<Item = T>,
     T: Into<std::ffi::OsString> + Clone,
@@ -232,15 +237,18 @@ where
                             _ => HdImplementation::Bip32,
                         },
                     ),
-                    _ => serde_json::Value::String("".to_string())
+                    _ => Err("".to_string()) // action is already checked, so this never happens
                 }
-                _ => serde_json::Value::String("".to_string())
-            };
+                _ => Err("Invalid algorithm".to_string()) // Possible values specified, thus never happens
+            }?;
             println!("{}", result.to_string());
-            match sub_matches.value_of("output") {
-                None => {}
+            return match sub_matches.value_of("output") {
+                None => Ok(()),
                 Some(file_path) => {
-                    fs::write(file_path, result.to_string()).expect("Unable to save !");
+                    fs::write(file_path, result.to_string()).
+                        map_err(|e|
+                            format!("Unable to save because: {}, given path: {}", e, file_path)
+                        )
                 }
             }
         }
@@ -266,11 +274,9 @@ where
             } {
                 Ok(_) => println!("Keys data written to file: {:?}", keysfile_path),
                 Err(error) => {
-                    eprintln!("Command keygen failed with error: {}", error);
-                    return 1;
+                    return Err(format!("Command keygen failed with error: {}", error));
                 }
             }
-
         }
         ("convert_curv_07_to_09", Some(sub_matches)) => {
             let source_path = sub_matches.value_of("input_file").unwrap_or("").to_string();
@@ -299,5 +305,5 @@ where
         }
         _ => {}
     }
-    0
+    Ok(())
 }

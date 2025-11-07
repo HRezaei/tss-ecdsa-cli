@@ -68,7 +68,7 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) -> 
         uuid.clone(),
         delay,
         params.share_count as usize
-    );
+    )?;
 
     let (bc_i, decom_i) = party_keys.phase1_broadcast_phase3_proof_of_correct_key();
 
@@ -86,7 +86,7 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) -> 
         "round1",
         delay,
         serde_json::to_string(&bc_i).unwrap(),
-    );
+    )?;
 
     let bc1_vec = round1_ans_vec
         .iter()
@@ -101,7 +101,7 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) -> 
         "round2",
         delay,
         serde_json::to_string(&decom_i).unwrap(),
-    );
+    )?;
 
     let mut point_vec: Vec<GE> = Vec::new();
     let mut decom_vec: Vec<KeyGenDecommitMessage1> = Vec::new();
@@ -193,7 +193,7 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) -> 
         "round4",
         delay,
         serde_json::to_string(&vss_scheme).unwrap(),
-    );
+    )?;
 
     let mut vss_scheme_vec: Vec<VerifiableSS<Secp256k1>> = Vec::new();
     for j in 0..PARTIES as usize {
@@ -219,7 +219,7 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) -> 
         "round5",
         delay,
         serde_json::to_string(&dlog_proof).unwrap(),
-    );
+    )?;
 
     let mut dlog_proof_vec: Vec<DLogProof<Secp256k1, Sha256>> = Vec::new();
     for j in 0..PARTIES as usize {

@@ -61,7 +61,7 @@ pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) ->
         uuid.clone(),
         delay,
         parameters.share_count as usize
-    );
+    )?;
 
     // send commitment to ephemeral public keys, get round 1's commitments of other parties
     let round1_ans_vec = client.exchange_data(
@@ -71,7 +71,7 @@ pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) ->
         "round1",
         delay,
         serde_json::to_string(&bc_i).unwrap(),
-    );
+    )?;
     let bc1_vec = round1_ans_vec
         .iter()
         .map(|m| serde_json::from_str::<KeyGenBroadcastMessage1>(m).unwrap())
@@ -85,7 +85,7 @@ pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) ->
         "round2",
         delay,
         serde_json::to_string(&decom_i).unwrap(),
-    );
+    )?;
     let mut point_vec: Vec<GE> = Vec::new();
     let mut blind_vec: Vec<BigInt> = Vec::new();
     let mut enc_keys: Vec<Vec<u8>> = Vec::new();
@@ -187,7 +187,7 @@ pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) ->
         "round4",
         delay,
         serde_json::to_string(&vss_scheme).unwrap(),
-    );
+    )?;
     let mut vss_scheme_vec: Vec<VerifiableSS<Ed25519>> = Vec::new();
     for j in 0..PARTIES as usize {
         let vss_scheme_j: VerifiableSS<Ed25519> = serde_json::from_str(&round4_ans_vec[j]).unwrap();
@@ -214,7 +214,7 @@ pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) ->
         "round5",
         delay,
         serde_json::to_string(&dlog_proof).unwrap(),
-    );
+    )?;
     let mut dlog_proof_vec: Vec<DLogProof<Ed25519, Sha512>> = Vec::new();
     for j in 0..PARTIES as usize {
         let dlog_proof_j: DLogProof<Ed25519, Sha512> = serde_json::from_str(&round5_ans_vec[j]).unwrap();

@@ -49,7 +49,7 @@ pub fn sign(
     message: &[u8],
     f_l_new: &FE,
     sign_at_path: bool,
-) -> Value {
+) -> Result<Value, String> {
     let client = Client::new(addr.clone());
     let delay = time::Duration::from_millis(25);
     let room_id = sha256_digest(message);
@@ -87,7 +87,7 @@ pub fn sign(
         "round0",
         delay,
         serde_json::to_string(&party_id).unwrap(),
-    );
+    )?;
     let mut signers_vec: Vec<u16> = Vec::new();
     for j in 0..total_parties as usize {
         let signer_j: u16 = serde_json::from_str(&round0_ans_vec[j]).unwrap();
@@ -155,7 +155,7 @@ pub fn sign(
         "round1",
         delay,
         serde_json::to_string(&(com.clone(), m_a_k.clone())).unwrap(),
-    );
+    )?;
     let mut bc1_vec: Vec<SignBroadcastPhase1> = Vec::new();
     let mut m_a_vec: Vec<MessageA> = Vec::new();
 
@@ -280,7 +280,7 @@ pub fn sign(
         "round3",
         delay,
         serde_json::to_string(&delta_i).unwrap(),
-    );
+    )?;
     let mut delta_vec: Vec<FE> = Vec::new();
     format_vec_from_reads(&round3_ans_vec, &mut delta_vec);
     let delta_inv = SignKeys::phase3_reconstruct_delta(&delta_vec);
@@ -294,7 +294,7 @@ pub fn sign(
         "round4",
         delay,
         serde_json::to_string(&decommit).unwrap(),
-    );
+    )?;
     let mut decommit_vec: Vec<SignDecommitPhase1> = Vec::new();
     format_vec_from_reads(&round4_ans_vec, &mut decommit_vec);
 
@@ -332,7 +332,7 @@ pub fn sign(
         "round5",
         delay,
         serde_json::to_string(&phase5_com).unwrap(),
-    );
+    )?;
     let mut commit5a_vec: Vec<Phase5Com1> = Vec::new();
     format_vec_from_reads(&round5_ans_vec, &mut commit5a_vec);
 
@@ -348,7 +348,7 @@ pub fn sign(
             helgamal_proof.clone(),
             dlog_proof_rho.clone()
         )).unwrap(),
-    );
+    )?;
     let mut decommit5a_and_elgamal_and_dlog_vec: Vec<(
         Phase5ADecom1,
         HomoELGamalProof<Secp256k1, Sha256>,
@@ -394,7 +394,7 @@ pub fn sign(
         "round7",
         delay,
         serde_json::to_string(&phase5_com2).unwrap(),
-    );
+    )?;
     let mut commit5c_vec: Vec<Phase5Com2> = Vec::new();
     format_vec_from_reads(&round7_ans_vec, &mut commit5c_vec);
 
@@ -406,7 +406,7 @@ pub fn sign(
         "round8",
         delay,
         serde_json::to_string(&phase_5d_decom2).unwrap(),
-    );
+    )?;
     let mut decommit5d_vec: Vec<Phase5DDecom2> = Vec::new();
     format_vec_from_reads(&round8_ans_vec, &mut decommit5d_vec);
 
@@ -429,7 +429,7 @@ pub fn sign(
         "round9",
         delay,
         serde_json::to_string(&s_i).unwrap(),
-    );
+    )?;
     let mut s_i_vec: Vec<FE> = Vec::new();
     format_vec_from_reads(&round9_ans_vec, &mut s_i_vec);
 
@@ -463,7 +463,7 @@ pub fn sign(
         "msg_int": message_int,
     });
 
-    ret_dict
+    Ok(ret_dict)
 
     //    fs::write("signature".to_string(), sign_json).expect("Unable to save !");
 

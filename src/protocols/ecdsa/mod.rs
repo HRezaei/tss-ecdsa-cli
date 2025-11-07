@@ -127,7 +127,7 @@ pub fn run_pubkey_or_sign(
     manager_addr:String,
     params:Vec<&str>,
     hd_variant: HdImplementation,
-) -> Value
+) -> Result<Value, String>
 {
     // Read data from keys file
     let ECDSAParameters {
@@ -213,10 +213,10 @@ pub fn run_pubkey_or_sign(
             &message,
             &tweak,
             !path.is_empty(),
-        )
+        )?
     };
 
-    result
+    Ok(result)
 }
 
 pub(crate) fn check_key_file(keysfile_path:&str, limit: usize) -> bool {

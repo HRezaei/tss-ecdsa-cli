@@ -35,7 +35,7 @@ pub fn run_signer(manager_address:String,
     message_str:String,
     path: &str,
     hd_variant: HdImplementation
-) -> (Signature, GE) {
+) -> Result<(Signature, GE), String> {
     // This function is written inspired from the
     // test function: protocols::thresholdsig::test::tests::test_t2_n5_sign_with_4_internal()
     let message = match hex::decode(message_str.clone()) {
@@ -115,7 +115,7 @@ pub fn run_signer(manager_address:String,
         "round0",
         delay,
         party_id - 1,
-    );
+    )?;
 
     let (_eph_keys_vec, eph_shared_keys_vec, R, eph_vss_vec) = eph_keygen_t_n_parties(
         client.clone(),
@@ -127,7 +127,7 @@ pub fn run_signer(manager_address:String,
         &party_keys,
         &message,
         parties_index_vec.clone()
-    );
+    )?;
 
     let local_sig = LocalSig::compute(
         &message,
@@ -142,7 +142,7 @@ pub fn run_signer(manager_address:String,
         "round1_local_sig",
         delay,
         local_sig
-    );
+    )?;
 
     let verify_local_sig = LocalSig::verify_local_sigs(
         &local_sig_vec,
@@ -167,7 +167,7 @@ pub fn run_signer(manager_address:String,
     let verify_sig = signature.verify(&message, &Y);
     assert!(verify_sig.is_ok());
 
-    (signature, Y)
+    Ok((signature, Y))
 }
 
 fn update_party_key(party_keys: Keys, f_l_new: Scalar<Ed25519>, party_num_int: u16) -> Keys {
@@ -243,12 +243,12 @@ pub fn eph_keygen_t_n_parties(
     key_i: &Keys,
     message: &[u8],
     parties: Vec<u16>
-) -> (
+) -> Result<(
     EphemeralKey,
     Vec<EphemeralSharedKeys>,
     GE,
     Vec<VerifiableSS<Ed25519>>,
-) {
+), String> {
     let parties = parties
         .iter()
         .map(|i| i + 1)
@@ -281,7 +281,7 @@ pub fn eph_keygen_t_n_parties(
         "eph_keygen_round1",
         delay,
         serde_json::to_string(&(bc_i.clone(), blind.clone(), eph_party_key.R_i.clone())).unwrap(),
-    );
+    )?;
     let mut enc_keys: HashMap<u16, Vec<u8>> = HashMap::new();
     for j in 1..=n as usize {
         let (bc1_j, blind_j, R_i_j) =
@@ -316,7 +316,7 @@ pub fn eph_keygen_t_n_parties(
         "eph_keygen_round2",
         delay,
         serde_json::to_string(&vss_scheme).unwrap(),
-    );
+    )?;
     let mut vss_scheme_vec: Vec<VerifiableSS<Ed25519>> = Vec::new();
     for j in 0..n as usize {
         let vss_scheme_j: VerifiableSS<Ed25519> = serde_json::from_str(&round2_ans_vec[j]).unwrap();
@@ -402,12 +402,12 @@ pub fn eph_keygen_t_n_parties(
         "eph_keygen_round4",
         delay,
         serde_json::to_string(&eph_shared_key).unwrap(),
-    );
+    )?;
     for j in 0..n as usize {
         let shared_key_j: EphemeralSharedKeys = serde_json::from_str(&round4_ans_vec[j]).unwrap();
         shared_keys_vec.push(shared_key_j);
     }
 
-    (eph_party_key, shared_keys_vec, R_sum, vss_scheme_vec)
+    Ok((eph_party_key, shared_keys_vec, R_sum, vss_scheme_vec))
 }
 

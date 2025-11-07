@@ -240,7 +240,7 @@ impl Client {
         round: &str,
         delay: Duration,
         data:T,
-    ) -> Vec<T>
+    ) -> Result<Vec<T>, String>
     where
         T: Clone + serde::de::DeserializeOwned + serde::Serialize,
     {
@@ -250,8 +250,7 @@ impl Client {
             &round,
             serde_json::to_string(&data).unwrap(),
             uuid.clone()
-        )
-            .is_ok());
+        ).is_ok());
         let round_ans_vec = poll_for_broadcasts(
             &self,
             party_num,
@@ -261,7 +260,10 @@ impl Client {
             uuid.clone(),
         );
 
-        let json_answers = round_ans_vec.clone();
+        let json_answers = round_ans_vec
+            .map_err(|error|
+                format!("[{}] Error in polling broadcast responses: {}", round, error)
+            )?;
         let mut j = 0;
         let mut answers: Vec<T> = Vec::new();
         for i in 1..=n {
@@ -274,7 +276,7 @@ impl Client {
             }
         }
 
-        answers
+        Ok(answers)
     }
 }
 
@@ -386,7 +388,6 @@ pub fn postb<T>(client: &Client, path: &str, body: T) -> Option<String>
                 else {
                     eprintln!("Posting data to manager returned an error: {}. Retrying...", error);
                 }
-
             }
         }
         thread::sleep(retry_delay);
@@ -436,7 +437,7 @@ pub fn poll_for_broadcasts(
     delay: Duration,
     round: &str,
     sender_uuid: String,
-) -> Vec<String> {
+) -> Result<Vec<String>, String> {
     let mut ans_vec = Vec::new();
     let timeout = env::var(TSS_CLI_POLL_TIMEOUT_VAR)
         .unwrap_or(TSS_CLI_POLL_TIMEOUT_DEFAULT.to_string()).parse::<u64>().unwrap();
@@ -450,12 +451,9 @@ pub fn poll_for_broadcasts(
                 thread::sleep(delay);
                 let res_body = client.post( "get", index.clone()).unwrap();
                 let answer: Result<Entry, ManagerError> = serde_json::from_str(&res_body)
-                    .unwrap_or_else(|e| {
-                        println!("{}", error_message("Error in calling manager",
-                                                    format!("Error in calling manager {}", e).as_str())
-                        );
-                        exit(1);
-                    });
+                    .map_err(|parsing_error|
+                        format!("Error in parsing response: {}", parsing_error.to_string())
+                    )?;
                 match answer {
                     Ok(answer) => {
                         ans_vec.push(answer.value);
@@ -468,15 +466,14 @@ pub fn poll_for_broadcasts(
                     }
                 }
                 if start_time.elapsed().as_secs() > timeout {
-                    eprintln!("Polling timed out! No response received from party number {:?}", i);
-                    exit(1);
+                    return Err(format!("Polling timed out! No response received from party number {:?}", i));
                 };
 
                 thread::sleep(delay);
             }
         }
     }
-    ans_vec
+    Ok(ans_vec)
 }
 
 pub fn poll_for_p2p(
@@ -552,7 +549,14 @@ pub fn keygen_signup(client: &Client, params: &Params, curve_name: &str) -> Resu
 }
 
 
-pub fn signup(path: &str, client: &Client, params: &Params, room_id: String, party_id: u16, curve_name: &str) -> Result<(PartySignup, u16), ()> {
+pub fn signup(
+    path: &str,
+    client: &Client,
+    params: &Params,
+    room_id: String,
+    party_id: u16,
+    curve_name: &str
+) -> Result<(PartySignup, u16), String> {
     let threshold = params.threshold.parse::<u16>().unwrap();
     let mut request_body = PartySignupRequestBody{
         threshold: threshold,

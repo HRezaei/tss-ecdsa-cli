@@ -630,7 +630,11 @@ mod unit_tests {
                 manager: None,
             };
             let output = run_main(arguments);
-            assert_eq!(output, 0);
+            assert!(
+                output.is_ok(),
+                "run_main() failed with error: {}",
+                output.unwrap_err()
+            );
         }
         else {
             assert!(false, "Failed to prepare manager and key files.")

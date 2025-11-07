@@ -55,7 +55,7 @@ fn generate_shared_chain_code<E: Curve, H: Digest + Clone>(client: Client,
                                                            uuid: String,
                                                            delay: Duration,
                                                            share_count: usize
-) -> Scalar<E>
+) -> Result<Scalar<E>, String>
 {
     let chain_code_i = Scalar::<E>::random();
     let dlog_proof: DLogProof<E, H> = DLogProof::prove(&chain_code_i);
@@ -68,7 +68,7 @@ fn generate_shared_chain_code<E: Curve, H: Digest + Clone>(client: Client,
         "round0_chain_code",
         delay,
         dlog_proof,
-    );
+    )?;
 
     verify_dlog_proofs(share_count, &dlog_proof_vec, parties_num as usize)
         .expect("bad dlog proof for chain code");
@@ -81,10 +81,10 @@ fn generate_shared_chain_code<E: Curve, H: Digest + Clone>(client: Client,
         "round1_chain_code",
         delay,
         chain_code_i,
-    );
+    )?;
 
     let (head, tail) = chain_codes.split_at(1);
     let chain_code = tail.iter().fold(head[0].clone(), |acc, x| acc + x);
 
-    chain_code
+    Ok(chain_code)
 }

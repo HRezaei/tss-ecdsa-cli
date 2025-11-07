@@ -71,31 +71,31 @@ pub(crate) fn prepare_manager_and_keys_offline(threshold: i32, n_parties: i32, a
                     "-a",
                     OFFLINE_MANAGER_ADDRESS
                 ];
-                run_main(args);
+                run_main(args)
             }).unwrap();
 
         handles.push(handle);
         thread::sleep(Duration::from_secs(10)); // avoid race
     }
-    for handle in handles {
-        handle.join().unwrap();
-    }
+
     // Wait for all threads
-    /*for handle in handles {
-        match handle.join() {
-            Ok(res) => {
-                println!("res: {:?}", res)
-            }
-            Err(_) => {
-                eprintln!("Thread panicked:");
-                return None;
+    let results: Vec<_> = handles
+        .into_iter()
+        .map(|h| h.join().expect("Thread panicked")) // unwrap JoinResult
+        .collect();
+
+    let mut all_ok = true;
+    for (index, result) in results.iter().enumerate() {
+        match result {
+            Ok(_) => {}
+            Err(error) => {
+                eprintln!("Party {} failed with error: {}", index, error);
+                all_ok = false;
             }
         }
     }
 
-     */
-
-    Some(keyfiles)
+    all_ok.then(|| keyfiles)
 }
 
 pub fn run_pubkey_function(keyfile: &str, args: Vec<&str>) -> Result<HashMap<String, String>, String> {
@@ -241,7 +241,7 @@ pub fn run_main_in_parallel(
             .name(format!("worker-{}", index))
             .spawn(move || {
                 let args = main_args.clone(); // makes an owned String
-                run_main(args);
+                run_main(args)
             }).unwrap();
 
         handles.push(handle);

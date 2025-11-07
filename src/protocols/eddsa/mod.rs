@@ -106,7 +106,7 @@ pub fn sign(
     message_str:String,
     path: &str,
     hd_variant: HdImplementation
-)-> Value {
+)-> Result<Value, String> {
     if !validate_hex_string(message_str.as_str()) {
         println!("{}", INVALID_MESSAGE_STRING_ERROR);
         exit(1);
@@ -124,7 +124,7 @@ pub fn sign(
         message_str.clone(),
         path,
         hd_variant
-    );
+    )?;
 
     let ret_dict = json!({
         "r": (BigInt::from_bytes(&(signature.R.to_bytes(false)))).to_str_radix(16),
@@ -137,11 +137,11 @@ pub fn sign(
 
     //fs::write("signature.json".to_string(), ret_dict.clone().to_string()).expect("Unable to save !");
 
-    ret_dict
+    Ok(ret_dict)
 }
 
 
-pub fn run_pubkey(keys_file_path:&str, path:&str, hd_variant: HdImplementation) -> Value {
+pub fn run_pubkey(keys_file_path:&str, path:&str, hd_variant: HdImplementation) -> Result<Value, String> {
 
     // Read data from keys file
     let EdDSAParameters {
@@ -199,7 +199,7 @@ pub fn run_pubkey(keys_file_path:&str, path:&str, hd_variant: HdImplementation) 
                 "chain_code": hex::encode(chain_code),
                 "path": path,
             });
-    ret_dict
+    Ok(ret_dict)
 }
 
 
