@@ -288,13 +288,20 @@ where
             let source_path = sub_matches.value_of("input_file").unwrap_or("").to_string();
             let limit = sub_matches.value_of("max_first").unwrap_or(MAX_FIRST_PRIMES.to_string().as_str()).parse::<usize>().unwrap();
 
-            let result: bool = ecdsa::check_key_file(source_path.as_str(), limit);
-            if result {
-                println!("Key file check failed.");
-            }
-            else {
-                println!("Key file check successful!");
-            }
+            match ecdsa::check_key_file(source_path.as_str(), limit) {
+                Ok(result) => {
+                    if result {
+                        println!("Key file check failed.");
+                    }
+                    else {
+                        println!("Key file check successful!");
+                    }
+                },
+                Err(error) => {
+                    println!("Couldn't check key file, error: {}", error);
+                }
+            };
+
         }
         ("export", Some(sub_matches)) => {
             let source_dir = sub_matches.value_of("input_dir")

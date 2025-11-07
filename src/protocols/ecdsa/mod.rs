@@ -212,12 +212,11 @@ pub fn run_pubkey_or_sign(
     Ok(result)
 }
 
-pub(crate) fn check_key_file(keysfile_path:&str, limit: usize) -> bool {
+pub(crate) fn check_key_file(keysfile_path:&str, limit: usize) -> Result<bool, String> {
     // Read data from keys file
     match ECDSAParameters::read_from_file (keysfile_path.to_string()) {
         Ok(params) => {
             println!("max_first primes is set to: {:?}", limit);
-
 
             let mut failed = false;
             println!("Checking paillier_key_vector[..].n");
@@ -227,11 +226,10 @@ pub(crate) fn check_key_file(keysfile_path:&str, limit: usize) -> bool {
                 };
             }
 
-            failed
+            Ok(failed)
         }
         Err(error) => {
-            eprintln!("{}: {}", INVALID_FRAGMENT_FILE_ERROR, error);
-            exit(1);
+            Err(format!("{}: {}", INVALID_FRAGMENT_FILE_ERROR, error))
         }
     }
 }
