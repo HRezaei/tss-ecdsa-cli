@@ -8,7 +8,7 @@ pub mod ecdsa;
 pub mod eddsa;
 
 pub(crate) const INVALID_MESSAGE_STRING_ERROR: &str = "Invalid message string. It has to be a hex string with at least 32 characters.";
-pub(crate) const INVALID_FRAGMENT_FILE_ERROR: &str = "Error loading file";
+pub(crate) const INVALID_FRAGMENT_FILE_ERROR: &str = "Error loading fragment file";
 pub(crate) const PUBLIC_KEY_ERROR_IN_FILE: &str = "Invalid public key in party_key";
 pub(crate) const PRIVATE_KEY_ERROR_IN_FILE: &str = "Invalid private key in party_key";
 pub(crate) const PARTY_INDEX_ERROR_IN_FILE: &str = "Invalid party index in party_key";

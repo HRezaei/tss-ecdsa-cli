@@ -1,5 +1,4 @@
 use std::fs;
-use std::process::exit;
 use curv::arithmetic::Converter;
 use curv::BigInt;
 use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
@@ -108,8 +107,7 @@ pub fn sign(
     hd_variant: HdImplementation
 )-> Result<Value, String> {
     if !validate_hex_string(message_str.as_str()) {
-        println!("{}", INVALID_MESSAGE_STRING_ERROR);
-        exit(1);
+        return Err(format!("{}", INVALID_MESSAGE_STRING_ERROR));
     }
 
     let params = Params {
@@ -151,13 +149,8 @@ pub fn run_pubkey(keys_file_path:&str, path:&str, hd_variant: HdImplementation) 
         party_id: _party_id,
         vss_scheme_vec: _vss_scheme_vec,
         master_public_key: y_sum
-    } = match EdDSAParameters::read_from_file(keys_file_path.to_string()){
-        Ok(params) => params,
-        Err(error) => {
-            eprintln!("{}: {}", INVALID_FRAGMENT_FILE_ERROR, error);
-            exit(1);
-        },
-    };
+    } = EdDSAParameters::read_from_file(keys_file_path.to_string())
+        .map_err(|error| format!("{}: {}", INVALID_FRAGMENT_FILE_ERROR, error))?;
 
     // Get root pub key or HD pub key at specified path
     let (y_sum, _f_l_new, chain_code): (GE, FE, Vec<u8>) = match path.is_empty() {
@@ -169,8 +162,7 @@ pub fn run_pubkey(keys_file_path:&str, path:&str, hd_variant: HdImplementation) 
                     match path.contains('\'') {
                         false => hd_keys::get_legacy_hd_key(&y_sum, path, chain_code),
                         true => {
-                            eprintln!("Hardened child derivation is not supported in legacy HD.");
-                            exit(1);
+                            return Err("Hardened child derivation is not supported in legacy HD.".to_string());
                         }
                     }
                 }

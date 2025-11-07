@@ -1,5 +1,4 @@
 use std::{fs, time};
-use std::process::exit;
 use curv::{
     arithmetic::traits::Converter,
     cryptographic_primitives::{
@@ -74,8 +73,7 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) -> 
 
     let pailiar_key_for_checking = bc_i.clone();
     if is_divisible_by_first_n_primes(pailiar_key_for_checking.e.n, MAX_FIRST_PRIMES) {
-        eprintln!("Error: unsafe pailiar key found! Try to run the script again.");
-        exit(1);
+        return Err("Error: unsafe pailiar key found! Try to run the script again.".to_string());
     }
 
     // send commitment to ephemeral public keys, get round 1's commitments of other parties
@@ -132,13 +130,9 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) -> 
             // prepare encrypted ss for party i:
             let key_i = BigInt::to_bytes(&enc_keys[j]);
             let plaintext = BigInt::to_bytes(&secret_shares[k].to_bigint());
-            let aead_pack_i = match aes_encrypt(&key_i, &plaintext) {
-                Ok(aead_pack) => {aead_pack}
-                Err(message) => {
-                    eprintln!("Encryption error: {}", message);
-                    exit(1);
-                }
-            };
+            let aead_pack_i = aes_encrypt(&key_i, &plaintext)
+                .map_err(|e| format!("Encryption error: {}", e))? ;
+
             assert!(sendp2p(
                 &client,
                 party_num_int,
@@ -178,8 +172,7 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) -> 
                     j += 1;
                 }
                 Err(error) => {
-                    eprintln!("Decryption error: {}", error);
-                    exit(1);
+                    return Err(format!("Decryption error: {}", error));
                 }
             }
         }

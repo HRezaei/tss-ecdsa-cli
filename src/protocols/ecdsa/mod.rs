@@ -6,7 +6,6 @@ extern crate serde_json;
 use serde_json::{json, Value};
 
 use std::fs;
-use std::process::exit;
 use crate::common::{hd_keys, is_divisible_by_first_n_primes, validate_hex_string, validate_vss_scheme_vector, Params};
 
 //use aes_gcm::aead::{NewAead};
@@ -41,9 +40,9 @@ impl ECDSAParameters {
 
     pub fn read_from_file(keys_file_path: String) -> Result<ECDSAParameters, String> {
         // Read data from keys file
-        let data = fs::read_to_string(keys_file_path.clone()).expect(
-            format!("Unable to load keys file at location: {}", keys_file_path).as_str(),
-        );
+        let data = fs::read_to_string(keys_file_path.clone())
+            .map_err(|err| format!("Location: {}, Error: {:?}", keys_file_path, err))?;
+
         match serde_json::from_str(&data) {
             Ok(params) => {
                 let (party_key, chain_code, shared_keys, party_id, vss_scheme_vec, paillier_key_vec, master_public_key): (
@@ -138,13 +137,8 @@ pub fn run_pubkey_or_sign(
         mut vss_scheme_vec,
         paillier_key_vec,
         master_public_key: y_sum
-    } = match ECDSAParameters::read_from_file (keysfile_path.to_string()) {
-        Ok(params) => {params}
-        Err(error) => {
-            eprintln!("{}: {}", INVALID_FRAGMENT_FILE_ERROR, error);
-            exit(1);
-        }
-    };
+    } = ECDSAParameters::read_from_file (keysfile_path.to_string())
+        .map_err(|error| format!("{}: {}", INVALID_FRAGMENT_FILE_ERROR, error))?;
 
     // Get root pub key or HD pub key at specified path
     let (derived_child, tweak, derived_chain_code) = match path.is_empty() {
@@ -185,8 +179,7 @@ pub fn run_pubkey_or_sign(
     else {
 
         if !validate_hex_string(message_str) {
-            println!("{}", INVALID_MESSAGE_STRING_ERROR);
-            exit(1);
+            return Err(format!("{}", INVALID_MESSAGE_STRING_ERROR));
         }
 
         // Parse message to sign

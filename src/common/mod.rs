@@ -542,8 +542,7 @@ pub fn keygen_signup(client: &Client, params: &Params, curve_name: &str) -> Resu
             }
         }
         None => {
-            println!("Signup returned no response");
-            exit(1);
+            Err("Signup returned no response".to_string())
         }
     }
 }
@@ -565,15 +564,15 @@ pub fn signup(
         party_uuid: "".to_string(),
         curve_name: curve_name.to_string()
     };
-    let delay = time::Duration::from_millis(100);
-    let timeout = std::env::var("TSS_CLI_SIGNUP_TIMEOUT")
+    let delay = Duration::from_millis(100);
+    let timeout = env::var("TSS_CLI_SIGNUP_TIMEOUT")
         .unwrap_or("30".to_string()).parse::<u64>().unwrap();
     let res_body = client.post( path, request_body.clone()).unwrap();
     let answer: Result<SigningPartySignup, ManagerError> = serde_json::from_str(&res_body).unwrap();
     let (output, total_parties) = match answer {
         Ok(SigningPartySignup{party_order, party_uuid, room_uuid, total_joined}) => {
             println!("Signed up, party order: {:?}, joined so far: {:?}, waiting for room uuid", party_order, total_joined);
-            let mut now = time::SystemTime::now();
+            let mut now = SystemTime::now();
             let mut last_total_joined = total_joined;
             let mut party_signup = PartySignup {
                 number: party_order,
@@ -596,11 +595,13 @@ pub fn signup(
                             println!("Joined so far: {:?}", total_joined);
                             last_total_joined = total_joined;
                             //Reset the signup timeout
-                            now = time::SystemTime::now();
+                            now = SystemTime::now();
                         }
                     },
                     Err(ManagerError{error}) => {
-                        panic!("Manager returned an error in response to signup request: {}", error);
+                        return Err(
+                            format!("Manager returned an error in response to signup request: {}", error)
+                        );
                     }
                 };
                 if now.elapsed().unwrap().as_secs() > timeout{
@@ -608,24 +609,21 @@ pub fn signup(
                 }
             }
             if party_signup.uuid.is_empty() {
-                panic!("Could not get room uuid after {:?} seconds of tries", timeout);
+                return Err(format!("Could not get room uuid after {:?} seconds of tries", timeout));
             }
             (party_signup, last_total_joined)
         },
         Err(ManagerError{error}) => {
-            eprintln!("{}: {}", MANAGER_ERROR_MESSAGE, error);
-            exit(1);
+            return Err(format!("{}: {}", MANAGER_ERROR_MESSAGE, error))
         }
     };
 
     if total_parties <= threshold {
-        println!("Not enough parties are joined: {}", total_parties);
-        exit(1);
+        return Err(format!("Not enough parties are joined: {}", total_parties));
     }
 
-    if  params.parties.parse::<u16>().unwrap() < output.number  {
-        println!("Invalid ID assigned to party: {}", output.number);
-        exit(1);
+    if params.parties.parse::<u16>().unwrap() < output.number  {
+        return Err(format!("Invalid ID assigned to party: {}", output.number));
     }
 
     Ok((output, total_parties))

@@ -5,7 +5,6 @@ extern crate paillier;
 extern crate reqwest;
 extern crate serde_json;
 
-use std::process::exit;
 use std::time;
 
 use curv::cryptographic_primitives::proofs::sigma_correct_homomorphic_elgamal_enc::HomoELGamalProof;
@@ -22,7 +21,6 @@ use serde_json::{json, Value};
 use curv::elliptic::curves::{Point, Secp256k1};
 use paillier::EncryptionKey;
 use sha2::Sha256;
-
 use crate::common::{signup, Client};
 use crate::ecdsa::{CURVE_NAME, FE, GE};
 use crate::common::{poll_for_p2p, sendp2p, Params, PartySignup, sha256_digest};
@@ -63,7 +61,7 @@ pub fn sign(
         room_id,
         party_id,
         CURVE_NAME
-    ).unwrap() {
+    )? {
         (PartySignup { number, uuid }, total_parties) => (
             number,
             uuid,
@@ -369,11 +367,8 @@ pub fn sign(
         .map(|i| decommit5a_and_elgamal_and_dlog_vec[i as usize].2.clone())
         .collect::<Vec<DLogProof<Secp256k1, Sha256>>>();
 
-    let _ = verify_dlog_proofs((total_parties - 1) as usize, &phase_5a_dlog_vec, (total_parties - 1) as usize)
-        .map_err(|_e| {
-            println!("Error: Bad dlog proof.");
-            exit(1);
-        });
+    verify_dlog_proofs((total_parties - 1) as usize, &phase_5a_dlog_vec, (total_parties - 1) as usize)
+        .map_err(|_e| "Dlog proof verification failed.".to_string())?;
 
     let (phase5_com2, phase_5d_decom2) = local_sig
         .phase5c(

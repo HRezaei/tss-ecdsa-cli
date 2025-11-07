@@ -1,6 +1,5 @@
 use std::time::Duration;
 use std::collections::HashMap;
-use std::process::exit;
 use curv::arithmetic::{Converter};
 use curv::BigInt;
 use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
@@ -54,13 +53,8 @@ pub fn run_signer(manager_address:String,
         party_id,
         vss_scheme_vec,
         master_public_key: Y
-    } = match EdDSAParameters::read_from_file(key_file_path) {
-        Ok(x) => x,
-        Err(error) => {
-            eprintln!("{}: {}", INVALID_FRAGMENT_FILE_ERROR, error);
-            exit(1);
-        }
-    };
+    } = EdDSAParameters::read_from_file(key_file_path)
+        .map_err(|error| format!("{}: {}", INVALID_FRAGMENT_FILE_ERROR, error))?;
 
     let sign_at_path = !path.is_empty();
     // Get root pub key or HD pub key at specified path
@@ -94,9 +88,10 @@ pub fn run_signer(manager_address:String,
 
     //signup:
     let signup_path = "signupsign";
-    let (party_num_int, uuid, total_parties) = match signup(signup_path, &client, &params, room_id, party_id, CURVE_NAME).unwrap() {
-        (PartySignup { number, uuid }, total_parties) => (number, uuid, total_parties),
-    };
+    let (party_num_int, uuid, total_parties) =
+        match signup(signup_path, &client, &params, room_id, party_id, CURVE_NAME)? {
+            (PartySignup { number, uuid }, total_parties) => (number, uuid, total_parties),
+        };
     println!("number: {:?}, uuid: {:?}, curve: {:?}", party_num_int, uuid, CURVE_NAME);
 
     if sign_at_path == true {
@@ -330,13 +325,8 @@ pub fn eph_keygen_t_n_parties(
             // prepare encrypted ss for party i:
             let key_i = enc_keys.get(&parties[(i-1) as usize]).unwrap();
             let plaintext = BigInt::to_bytes(&secret_shares[k].to_bigint());
-            let aead_pack_i = match aes_encrypt(key_i, &plaintext){
-                Ok(aead_pack) => {aead_pack}
-                Err(message) => {
-                    eprintln!("Encryption error: {}", message);
-                    exit(1);
-                }
-            };
+            let aead_pack_i = aes_encrypt(key_i, &plaintext)
+                .map_err(|e| format!("Encryption error: {}", e))?;
             assert!(sendp2p(
                 &client,
                 party_num_int,
@@ -374,8 +364,7 @@ pub fn eph_keygen_t_n_parties(
                     j += 1;
                 }
                 Err(error) => {
-                    eprintln!("Decryption error: {}", error);
-                    exit(1);
+                    return Err(format!("Decryption error: {}", error));
                 }
             }
 

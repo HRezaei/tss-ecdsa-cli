@@ -1,5 +1,4 @@
 use std::{fs, time};
-use std::process::exit;
 use std::string::String;
 use curv::arithmetic::Converter;
 use curv::BigInt;
@@ -125,13 +124,8 @@ pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) ->
             // prepare encrypted ss for party i:
             let key_i = &enc_keys[j];
             let plaintext = BigInt::to_bytes(&secret_shares[k].to_bigint());
-            let aead_pack_i = match aes_encrypt(key_i, &plaintext) {
-                Ok(aead_pack) => {aead_pack}
-                Err(message) => {
-                    eprintln!("Encryption error: {}", message);
-                    exit(1);
-                }
-            };
+            let aead_pack_i = aes_encrypt(key_i, &plaintext)
+                .map_err(|e| format!("Encryption error: {}", e))?;
             assert!(sendp2p(
                 &client,
                 party_num_int,
@@ -139,8 +133,7 @@ pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) ->
                 "round3",
                 serde_json::to_string(&aead_pack_i).unwrap(),
                 uuid.clone()
-            )
-                .is_ok());
+            ).is_ok());
             j += 1;
         }
     }
@@ -171,8 +164,7 @@ pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) ->
                     j += 1;
                 }
                 Err(error) => {
-                    eprintln!("Decryption error: {}", error);
-                    exit(1);
+                    return Err(format!("Decryption error: {}", error));
                 }
             }
 
@@ -234,9 +226,8 @@ pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) ->
         party_num_int,
         vss_scheme_vec,
         y_sum,
-    ))
-        .unwrap();
+    )).unwrap();
 
-    fs::write(keys_file_path, keygen_json).expect("Unable to save !");
+    fs::write(keys_file_path, keygen_json).map_err(|e| format!("Unable to save because {}", e))?;
     Ok(())
 }
