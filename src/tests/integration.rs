@@ -4,14 +4,12 @@ use std::fs::File;
 use std::net::TcpStream;
 use std::process::{Child, Stdio};
 use std::sync::mpsc;
-use rand::distr::Alphanumeric;
-use rand::Rng;
 use std::option::Option;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::Value;
 use crate::common::{sha256_digest, DKGSignScheme, TSS_CLI_POLL_TIMEOUT_VAR};
-use crate::tests::{ecdsa, get_cli_executable_path, get_next_manager_port, kill_manager, parse_sign_output, vector_all_the_same, TestResourcesCleanUp};
+use crate::tests::{ecdsa, get_cli_executable_path, get_next_manager_port, kill_manager, parse_sign_output, random_string, vector_all_the_same, TestResourcesCleanUp};
 use crate::tests::eddsa;
 
 const MANAGER_ADDRESS: &str = "127.0.0.1";
@@ -97,11 +95,7 @@ fn prepare_manager(manager_addr: &str) -> (Child, String, PathBuf) {
 pub(crate) fn prepare_manager_and_keys(threshold: i32, n_parties: i32, algorithm: DKGSignScheme)
                                        -> Option<(Child, Vec<String>, String)> {
     // Generate a random 8-character alphanumeric string
-    let random_str: String = rand::rng()
-        .sample_iter(&Alphanumeric)
-        .take(4)
-        .map(char::from)
-        .collect();
+    let random_str: String = random_string(4);
 
     let curve_prefix = match algorithm {
         DKGSignScheme::ECDSA => "ecdsa",
@@ -315,7 +309,8 @@ fn check_sign_t_of_n(
     manager_url: String,
     algorithm: DKGSignScheme,
 ) {
-    let message = "hello world";
+    //Add random string to create a separate room in manager, when running test threads in parallel:
+    let message = "hello world ".to_string() + random_string(4).as_str();
     let message_hash = sha256_digest(message.as_bytes());
     let curve_prefix = match algorithm {
         DKGSignScheme::ECDSA => "ecdsa",

@@ -3,6 +3,8 @@ use std::process::Child;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::time::Duration;
+use rand::distr::Alphanumeric;
+use rand::Rng;
 use serde_json::Value;
 
 mod eddsa;
@@ -99,4 +101,12 @@ fn parse_sign_output(response: String) -> Result<HashMap<String, String>, String
             Err(e.to_string())
         }
     }
+}
+
+fn random_string(length: usize) -> String {
+    rand::rng()
+        .sample_iter(&Alphanumeric)
+        .take(length)
+        .map(char::from)
+        .collect()
 }

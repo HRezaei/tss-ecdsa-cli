@@ -11,7 +11,7 @@ use rocket::futures::executor::block_on;
 use crate::common::{sha256_digest, DKGSignScheme, OfflineClient, OFFLINE_MANAGER_ADDRESS};
 use crate::common::manager::build_manager;
 use crate::protocols::HdImplementation;
-use crate::tests::{ecdsa, eddsa, parse_sign_output, vector_all_the_same, TestResourcesCleanUp, CLI_NAME};
+use crate::tests::{ecdsa, eddsa, parse_sign_output, random_string, vector_all_the_same, TestResourcesCleanUp, CLI_NAME};
 
 
 pub async fn init_client() -> &'static OfflineClient {
@@ -148,7 +148,8 @@ pub fn check_sign_t_of_n_offline(
     hd_path: String,
     hd_implementation: HdImplementation
 ) {
-    let message = "hello world";
+    //Add random string to create a separate room in manager, when running test threads in parallel:
+    let message = "hello world ".to_string() + random_string(4).as_str();
     let message_hash = sha256_digest(message.as_bytes());
     let curve_prefix = match algorithm {
         DKGSignScheme::ECDSA => "ecdsa",
