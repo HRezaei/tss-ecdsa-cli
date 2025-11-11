@@ -153,7 +153,7 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) -> 
         delay,
         "round3",
         uuid.clone(),
-    );
+    )?;
 
     let mut j = 0;
     let mut party_shares: Vec<FE> = Vec::new();

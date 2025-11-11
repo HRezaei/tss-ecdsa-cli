@@ -346,7 +346,7 @@ pub fn eph_keygen_t_n_parties(
         delay,
         "eph_keygen_round3",
         uuid.clone(),
-    );
+    )?;
 
     let mut j = 0;
     let mut party_shares: Vec<FE> = Vec::new();

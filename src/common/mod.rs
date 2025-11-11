@@ -483,7 +483,7 @@ pub fn poll_for_p2p(
     delay: Duration,
     round: &str,
     sender_uuid: String,
-) -> Vec<String> {
+) -> Result<Vec<String>, String> {
     let mut ans_vec = Vec::new();
     let timeout = env::var(TSS_CLI_POLL_TIMEOUT_VAR)
         .unwrap_or(TSS_CLI_POLL_TIMEOUT_DEFAULT.to_string()).parse::<u64>().unwrap();
@@ -506,7 +506,11 @@ pub fn poll_for_p2p(
                     },
                     Err(ManagerError{error: manager_error}) => {
                         if start_time.elapsed().as_secs() > timeout {
-                            panic!("Polling timed out! No response received in {:?} from party number {:?}. Error: {:?}", round, i, manager_error);
+                            return Err(
+                                format!("Polling timed out! No response received in {:?} from party number {:?}. Error: {:?}",
+                                        round, i, manager_error
+                                )
+                            );
                         };
                         #[cfg(debug_assertions)]
                         println!("[{:?}] party {:?} => party {:?}, error: {:?}", round, i, party_num, manager_error);
@@ -515,7 +519,7 @@ pub fn poll_for_p2p(
             }
         }
     }
-    ans_vec
+    Ok(ans_vec)
 }
 
 pub fn keygen_signup(client: &Client, params: &Params, curve_name: &str) -> Result<(u16, String), String> {

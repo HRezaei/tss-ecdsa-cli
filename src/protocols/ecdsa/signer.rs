@@ -221,7 +221,7 @@ pub fn sign(
         delay,
         "round2",
         uuid.clone(),
-    );
+    )?;
 
     let mut m_b_gamma_rec_vec: Vec<MessageB> = Vec::new();
     let mut m_b_w_rec_vec: Vec<MessageB> = Vec::new();
