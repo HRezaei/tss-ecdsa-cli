@@ -24,7 +24,7 @@ pub struct EdDSAParameters {
     shared_keys: SharedKeys,
     party_id: u16,
     vss_scheme_vec: Vec<VerifiableSS<Ed25519>>,
-    master_public_key: GE,
+    pub master_public_key: GE,
 }
 
 impl EdDSAParameters {

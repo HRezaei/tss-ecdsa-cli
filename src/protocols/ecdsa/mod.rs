@@ -33,7 +33,7 @@ pub struct ECDSAParameters {
     party_id: u16,
     vss_scheme_vec: Vec<VerifiableSS<Secp256k1>>,
     pub(crate) paillier_key_vec: Vec<EncryptionKey>,
-    master_public_key: GE,
+    pub master_public_key: GE,
 }
 
 impl ECDSAParameters {

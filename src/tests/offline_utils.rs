@@ -11,7 +11,7 @@ use rocket::futures::executor::block_on;
 use crate::common::{sha256_digest, DKGSignScheme, OfflineClient, OFFLINE_MANAGER_ADDRESS};
 use crate::common::manager::build_manager;
 use crate::protocols::HdImplementation;
-use crate::tests::{ecdsa, eddsa, parse_sign_output, random_string, vector_all_the_same, TestResourcesCleanUp, CLI_NAME};
+use crate::tests::{ecdsa, eddsa, find_prefixed_files, parse_sign_output, random_string, vector_all_the_same, TestResourcesCleanUp, CLI_NAME};
 
 
 pub async fn init_client() -> &'static OfflineClient {
@@ -111,11 +111,17 @@ pub fn run_pubkey_function(keyfile: &str, args: Vec<&str>) -> Result<HashMap<Str
         Ok(json) => {
             let required_keys = ["x", "y", "chain_code", "path"];
             let map_opt = json.as_object().map(|obj| {
-                required_keys.iter()
-                    .filter_map(|&key| obj.get(key).map(|v| (key.to_string(), v.to_string())))
+                required_keys
+                    .iter()
+                    .filter_map(|&key| {
+                        obj.get(key).and_then(|v| {
+                            v.as_str()
+                                .map(|s| (key.to_string(), s.to_string())) // use the actual string value
+                        })
+                    })
                     .collect::<HashMap<String, String>>()
             }).unwrap();
-            //println!("Output of pubkey command on {}:\n{}", keyfile, serde_json::to_string_pretty(&json).unwrap());
+
             Ok(map_opt)
         }
         Err(e) => {
@@ -306,4 +312,32 @@ pub fn check_sign_t_of_n_generate_offline(
         }
         None => assert!(false, "Failed to prepare manager and key files."),
     }
+}
+
+pub fn check_pubkey_function_without_path(
+    scheme: DKGSignScheme,
+    hd_implementation: HdImplementation
+) -> Vec<HashMap<String, String>> {
+    let algorithm = match scheme {
+        DKGSignScheme::ECDSA => "ecdsa",
+        DKGSignScheme::EdDSA => "eddsa"
+    };
+    let fixtures_path = "src/tests/fixtures/".to_owned() + algorithm;
+    let keyfiles = find_prefixed_files(fixtures_path.as_str(), "e").unwrap();
+
+    let hd_implementation_arg= match hd_implementation {
+        HdImplementation::Legacy => {"-hlegacy"}
+        HdImplementation::Bip32 => {"-hbip32"}
+    };
+    let arguments = vec![hd_implementation_arg, "-l", algorithm];
+
+    let mut maps: Vec<HashMap<String, String>> = vec![];
+    for key_file in keyfiles.iter() {
+        let output = run_pubkey_function(key_file, arguments.clone());
+        assert!(output.is_ok());
+        maps.push(output.unwrap());
+    }
+
+    assert!(vector_all_the_same(&maps));
+    maps
 }

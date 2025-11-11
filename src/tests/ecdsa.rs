@@ -572,13 +572,11 @@ pub(crate) mod integration {
 
 #[cfg(test)]
 mod unit_tests {
+    use curv::arithmetic::Converter;
     use crate::common::DKGSignScheme;
-    use crate::tests::offline_utils::{
-        check_keygen_t_of_n_offline,
-        check_sign_t_of_n_generate_offline,
-        prepare_manager_and_keys_offline
-    };
-    use crate::protocols::HdImplementation;
+    use crate::protocols::ecdsa::ECDSAParameters;
+    use crate::tests::offline_utils::{check_keygen_t_of_n_offline, check_pubkey_function_without_path, check_sign_t_of_n_generate_offline, prepare_manager_and_keys_offline};
+    use crate::protocols::{HdImplementation, INVALID_FRAGMENT_FILE_ERROR};
     use crate::run_main;
     use crate::tests::{TestResourcesCleanUp, CLI_NAME};
 
@@ -639,5 +637,44 @@ mod unit_tests {
         else {
             assert!(false, "Failed to prepare manager and key files.")
         };
+    }
+
+    fn get_master_public_key_coords(key_file_path: String) -> (String, String) {
+        let ECDSAParameters {
+            master_public_key, ..
+        } = ECDSAParameters::read_from_file(key_file_path)
+            .map_err(|error| format!("{}: {}", INVALID_FRAGMENT_FILE_ERROR, error)).unwrap();
+
+        let x = master_public_key.x_coord().unwrap().to_hex();
+        let y = master_public_key.y_coord().unwrap().to_hex();
+        (x, y)
+    }
+
+    #[test]
+    fn test_pubkey_no_path_legacy() {
+        let key_file_path = "src/tests/fixtures/ecdsa/ec-2-5-1.json".to_string();
+        let (x, y) = get_master_public_key_coords(key_file_path.clone());
+        let outputs = check_pubkey_function_without_path(
+            DKGSignScheme::ECDSA,
+            HdImplementation::Legacy
+        );
+        for result in outputs {
+            assert_eq!(result.get("x").unwrap(), &x);
+            assert_eq!(result.get("y").unwrap(), &y);
+        }
+    }
+
+    #[test]
+    fn test_pubkey_no_path_bip32() {
+        let key_file_path = "src/tests/fixtures/ecdsa/ec-2-5-1.json".to_string();
+        let (x, y) = get_master_public_key_coords(key_file_path.clone());
+        let outputs = check_pubkey_function_without_path(
+            DKGSignScheme::ECDSA,
+            HdImplementation::Bip32
+        );
+        for result in outputs {
+            assert_eq!(result.get("x").unwrap(), &x);
+            assert_eq!(result.get("y").unwrap(), &y);
+        }
     }
 }

@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::process::Child;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::thread;
+use std::{fs, thread};
+use std::path::Path;
 use std::time::Duration;
 use rand::distr::Alphanumeric;
 use rand::Rng;
@@ -109,4 +110,28 @@ fn random_string(length: usize) -> String {
         .take(length)
         .map(char::from)
         .collect()
+}
+
+/// Scans the given directory and returns a Vec of absolute paths
+/// to files whose names start with prefix
+pub fn find_prefixed_files(dir: &str, prefix: &str) -> Result<Vec<String>, String> {
+    let dir = Path::new(dir);
+    let mut result = Vec::new();
+
+    for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        // Ensure it's a file and name starts with "ec-"
+        if path.is_file() {
+            if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                if file_name.starts_with(prefix) {
+                    let abs_path = path.canonicalize().map_err(|e| e.to_string())?; // Absolute path as PathBuf
+                    if let Some(path_str) = abs_path.to_str() {
+                        result.push(path_str.to_string()); // Convert to String
+                    }
+                }
+            }
+        }
+    }
+    Ok(result)
 }
