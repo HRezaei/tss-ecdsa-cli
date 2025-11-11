@@ -68,7 +68,8 @@ fn convert_old_vss(vss: &OldVerifiableSS) -> VerifiableSS<Secp256k1> {
     }
 }
 
-pub fn convert_store_file(keys_file_path: String, destination_path: String) {
+pub fn convert_store_file(keys_file_path: String, destination_path: String)
+    -> Result<String, String> {
 
     // Read data from keys file
     let data = fs::read_to_string(keys_file_path.clone()).expect(
@@ -121,6 +122,9 @@ pub fn convert_store_file(keys_file_path: String, destination_path: String) {
         public_key,
     ))
         .unwrap();
-    println!("Keys data written to file: {:?}", destination_path);
-    fs::write(&destination_path, keygen_json).expect("Unable to save !");
+
+    fs::write(&destination_path, keygen_json)
+        .map_err(|e| format!("Unable to save in {}! Error: {:?}", destination_path, e))?;
+
+    Ok(format!("Keys data written to file: {:?}", destination_path))
 }

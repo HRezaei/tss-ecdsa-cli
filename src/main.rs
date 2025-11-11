@@ -28,7 +28,7 @@ mod tests;
 fn main() {
     let args: Vec<String> = env::args().collect();
     match run_main(args) {
-        Ok(_) => (),
+        Ok(outcome) => println!("{}", outcome),
         Err(error) => {
             eprintln!("{}", error);
             std::process::exit(1);
@@ -36,7 +36,7 @@ fn main() {
     };
 }
 
-fn run_main<I, T>(args: I) -> Result<(), String>
+fn run_main<I, T>(args: I) -> Result<String, String>
 where
     I: IntoIterator<Item = T>,
     T: Into<std::ffi::OsString> + Clone,
@@ -241,8 +241,7 @@ where
                 }
                 _ => Err("Invalid algorithm".to_string()) // Possible values specified, thus never happens
             }?;
-            println!("{}", result.to_string());
-            return match sub_matches.value_of("output") {
+            let _ = match sub_matches.value_of("output") {
                 None => Ok(()),
                 Some(file_path) => {
                     fs::write(file_path, result.to_string()).
@@ -250,10 +249,12 @@ where
                             format!("Unable to save because: {}, given path: {}", e, file_path)
                         )
                 }
-            }
+            };
+            Ok(result.to_string())
         }
         ("manager", Some(_matches)) => {
             let _ = manager::run_manager();
+            Ok("Manager started.".to_string())
         }
         ("keygen", Some(sub_matches)) => {
             let addr = sub_matches
@@ -267,50 +268,42 @@ where
                 .unwrap_or("")
                 .split("/")
                 .collect();
-            match match curve {
+            match curve {
                 "ecdsa" => ecdsa::keygen::run_keygen(&addr, &keysfile_path, &params),
                 "eddsa" => eddsa::keygen::run_keygen(&addr, &keysfile_path, &params),
                 _ => Err("Invalid curve type specified.".to_string())
-            } {
-                Ok(_) => println!("Keys data written to file: {:?}", keysfile_path),
-                Err(error) => {
-                    return Err(format!("Command keygen failed with error: {}", error));
-                }
             }
+                .map(|_| format!("Keys data written to file: {:?}", keysfile_path))
+                .map_err(|error| format!("Command keygen failed with error: {}", error))
         }
         ("convert_curv_07_to_09", Some(sub_matches)) => {
             let source_path = sub_matches.value_of("input_file").unwrap_or("").to_string();
             let destination_path = sub_matches.value_of("output_file").unwrap_or("").to_string();
 
-            ecdsa::curv7_conversion::convert_store_file(source_path, destination_path);
+            ecdsa::curv7_conversion::convert_store_file(source_path, destination_path)
         }
         ("safety_check", Some(sub_matches)) => {
             let source_path = sub_matches.value_of("input_file").unwrap_or("").to_string();
             let limit = sub_matches.value_of("max_first").unwrap_or(MAX_FIRST_PRIMES.to_string().as_str()).parse::<usize>().unwrap();
 
-            match ecdsa::check_key_file(source_path.as_str(), limit) {
-                Ok(result) => {
+            ecdsa::check_key_file(source_path.as_str(), limit)
+                .map_err(|error| format!("Couldn't check key file, error: {}", error))
+                .map(|result| {
                     if result {
-                        println!("Key file check failed.");
+                        "Key file check failed.".to_string()
                     }
                     else {
-                        println!("Key file check successful!");
+                        "Key file check successful!".to_string()
                     }
-                },
-                Err(error) => {
-                    println!("Couldn't check key file, error: {}", error);
-                }
-            };
-
+            })
         }
         ("export", Some(sub_matches)) => {
             let source_dir = sub_matches.value_of("input_dir")
                 .unwrap_or("")
                 .to_string();
             let result = export_keys(source_dir);
-            println!("{}", result);
+            Ok(result)
         }
-        _ => {}
+        _ => Err("Invalid command specified.".to_string())
     }
-    Ok(())
 }
