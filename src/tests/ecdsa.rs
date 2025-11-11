@@ -575,7 +575,13 @@ mod unit_tests {
     use curv::arithmetic::Converter;
     use crate::common::DKGSignScheme;
     use crate::protocols::ecdsa::ECDSAParameters;
-    use crate::tests::offline_utils::{check_keygen_t_of_n_offline, check_pubkey_function_without_path, check_sign_t_of_n_generate_offline, prepare_manager_and_keys_offline};
+    use crate::tests::offline_utils::{
+        check_keygen_t_of_n_offline,
+        check_pubkey_function_without_path,
+        check_sign_t_of_n_generate_offline,
+        prepare_manager_and_keys_offline,
+        run_curv7_convert_function
+    };
     use crate::protocols::{HdImplementation, INVALID_FRAGMENT_FILE_ERROR};
     use crate::run_main;
     use crate::tests::{TestResourcesCleanUp, CLI_NAME};
@@ -676,5 +682,11 @@ mod unit_tests {
             assert_eq!(result.get("x").unwrap(), &x);
             assert_eq!(result.get("y").unwrap(), &y);
         }
+    }
+
+    #[test]
+    fn test_convert_command() {
+        let curv7_fragment_file_path = "src/tests/fixtures/curv7/ec-2-5-1.json";
+        run_curv7_convert_function(curv7_fragment_file_path);
     }
 }

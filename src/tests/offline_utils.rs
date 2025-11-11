@@ -1,16 +1,15 @@
 use std::collections::HashMap;
-use std::io::Read;
-use std::{fs, thread};
+use std::{thread};
 use std::time::Duration;
 use serde_json::Value;
 use crate::run_main;
-use gag::BufferRedirect;
 use rand::distr::Alphanumeric;
 use rand::Rng;
 use rocket::futures::executor::block_on;
 use crate::common::{sha256_digest, DKGSignScheme, OfflineClient, OFFLINE_MANAGER_ADDRESS};
 use crate::common::manager::build_manager;
-use crate::protocols::HdImplementation;
+use crate::protocols::ecdsa::ECDSAParameters;
+use crate::protocols::{HdImplementation, INVALID_FRAGMENT_FILE_ERROR};
 use crate::tests::{ecdsa, eddsa, find_prefixed_files, parse_sign_output, random_string, vector_all_the_same, TestResourcesCleanUp, CLI_NAME};
 
 
@@ -104,8 +103,8 @@ pub fn run_pubkey_function(keyfile: &str, args: Vec<&str>) -> Result<HashMap<Str
     args.insert(0, "pubkey");
     args.insert(0, CLI_NAME);
 
-    let (printed_stdout, _exit_code) = capture_stdout(|| run_main(args));
-
+    //let (printed_stdout, _exit_code) = capture_stdout(|| run_main(args));
+    let printed_stdout = run_main(args)?;
     // Try parsing it as JSON
     match serde_json::from_str::<Value>(printed_stdout.as_str()) {
         Ok(json) => {
@@ -130,20 +129,6 @@ pub fn run_pubkey_function(keyfile: &str, args: Vec<&str>) -> Result<HashMap<Str
             Err(e.to_string())
         }
     }
-}
-
-fn capture_stdout<F, R>(f: F) -> (String, R)
-where
-    F: FnOnce() -> R,
-{
-    // Redirect stdout
-    let mut buf = BufferRedirect::stdout().unwrap();
-    let result = f(); // call the function (can take args)
-
-    // Read captured output
-    let mut output = String::new();
-    buf.read_to_string(&mut output).unwrap();
-    (output, result)
 }
 
 pub fn check_sign_t_of_n_offline(
@@ -198,14 +183,8 @@ pub fn check_sign_t_of_n_offline(
     let mut r_vector: Vec<String> = vec![];
     let mut s_vector: Vec<String> = vec![];
 
-    run_main_in_parallel(commands);
-    let mut outputs = Vec::new();
-    for output_path in output_paths.clone() {
-        let data = fs::read_to_string(output_path.clone()).expect(
-            format!("Unable to read output file of sign: {}", output_path).as_str(),
-        );
-        outputs.push(data);
-    }
+    let outputs = run_main_in_parallel(commands);
+
     let _cleanup = TestResourcesCleanUp {
         keyfiles: output_paths,
         manager: None,
@@ -213,8 +192,8 @@ pub fn check_sign_t_of_n_offline(
     let mut one_output: HashMap<String, String> = HashMap::new();
     for output in outputs.iter().clone() {
         //assert_eq!(*exit_code, 0, "Party {} failed with exit code {}", output, exit_code);
-
-        let output = parse_sign_output(output.to_string()).unwrap();
+        let data = output.clone().unwrap();
+        let output = parse_sign_output(data).unwrap();
         let r = output.get("r").unwrap();
         r_vector.push(r.to_string());
         s_vector.push(output.get("s").unwrap().to_string());
@@ -239,7 +218,7 @@ pub fn check_sign_t_of_n_offline(
 
 pub fn run_main_in_parallel(
     commands_args: Vec<Vec<String>>,
-) {
+) -> Vec<Result<String, String>> {
     let mut handles = Vec::new();
 
     for (index, command_arguments) in commands_args.iter().enumerate() {
@@ -254,9 +233,11 @@ pub fn run_main_in_parallel(
         handles.push(handle);
         thread::sleep(Duration::from_secs(10)); // avoid race
     }
+    let mut outputs = Vec::new();
     for handle in handles {
-        handle.join().unwrap();
+        outputs.push(handle.join().unwrap());
     }
+    outputs
 }
 
 pub fn check_keygen_t_of_n_offline(threshold: i32, n_parties: i32, algorithm: DKGSignScheme) {
@@ -334,10 +315,28 @@ pub fn check_pubkey_function_without_path(
     let mut maps: Vec<HashMap<String, String>> = vec![];
     for key_file in keyfiles.iter() {
         let output = run_pubkey_function(key_file, arguments.clone());
-        assert!(output.is_ok());
+        assert!(output.is_ok(), "Pubkey output was invalid: {:?}", output.err());
         maps.push(output.unwrap());
     }
 
     assert!(vector_all_the_same(&maps));
     maps
+}
+
+pub fn run_curv7_convert_function(keyfile: &str) {
+    let output_file_path =
+        "/tmp/test_outputs/converted-".to_owned() + random_string(4).as_str() + ".json";
+    let args = vec!(
+        CLI_NAME,
+        "convert_curv_07_to_09",
+        keyfile,
+        output_file_path.as_str(),
+    );
+
+    //let (_printed_stdout, _exit_code) = capture_stdout(|| run_main(args));
+    run_main(args).unwrap();
+    let parsed_key = ECDSAParameters::read_from_file(output_file_path)
+        .map_err(|error| format!("{}: {}", INVALID_FRAGMENT_FILE_ERROR, error));
+
+    assert!(parsed_key.is_ok())
 }
