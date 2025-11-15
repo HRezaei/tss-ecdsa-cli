@@ -449,12 +449,12 @@ pub fn sign(
     //    print(sig.recid.clone()
 
     let ret_dict = json!({
-        "r": sig.r.to_bigint().to_str_radix(16),
-        "s": sig.s.to_bigint().to_str_radix(16),
+        "r": hex::encode(sig.r.to_bytes().to_vec()),
+        "s": hex::encode(sig.s.to_bytes().to_vec()),
         "status": "signature_ready",
         "recid": sig.recid.clone(),
-        "x": &y_sum.x_coord().unwrap().to_str_radix(16),
-        "y": &y_sum.y_coord().unwrap().to_str_radix(16),
+        "x": hex::encode(y_sum.x_coord().unwrap().to_bytes().to_vec()),
+        "y": hex::encode(y_sum.y_coord().unwrap().to_bytes().to_vec()),
         "msg_int": message_int,
     });
 

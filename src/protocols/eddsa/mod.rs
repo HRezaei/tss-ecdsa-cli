@@ -1,6 +1,5 @@
 use std::fs;
 use curv::arithmetic::Converter;
-use curv::BigInt;
 use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
 use curv::elliptic::curves::{Ed25519, Scalar, Point};
 use multi_party_eddsa::protocols::thresholdsig::{Keys, SharedKeys};
@@ -125,11 +124,11 @@ pub fn sign(
     )?;
 
     let ret_dict = json!({
-        "r": (BigInt::from_bytes(&(signature.R.to_bytes(false)))).to_str_radix(16),
-        "s": (BigInt::from_bytes(&(signature.s.to_bytes()))).to_str_radix(16),
+        "r": hex::encode(signature.R.to_bytes(false).to_vec()),
+        "s": hex::encode(signature.s.to_bytes().to_vec()),
         "status": "signature_ready",
-        "x": &y_sum.x_coord().unwrap().to_str_radix(16),
-        "y": &y_sum.y_coord().unwrap().to_str_radix(16),
+        "x": hex::encode(y_sum.x_coord().unwrap().to_bytes().to_vec()),
+        "y": hex::encode(y_sum.y_coord().unwrap().to_bytes().to_vec()),
         "msg_int": message_str.as_bytes().to_vec().as_slice(),
     });
 
@@ -186,8 +185,8 @@ pub fn run_pubkey(keys_file_path:&str, path:&str, hd_variant: HdImplementation) 
 
     // Return pub key as x,y
     let ret_dict = json!({
-                "x": &y_sum.x_coord().unwrap().to_str_radix(16),
-                "y": &y_sum.y_coord().unwrap().to_str_radix(16),
+                "x": hex::encode(y_sum.x_coord().unwrap().to_bytes().to_vec()),
+                "y": hex::encode(y_sum.y_coord().unwrap().to_bytes().to_vec()),
                 "chain_code": hex::encode(chain_code),
                 "path": path,
             });

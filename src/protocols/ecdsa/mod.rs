@@ -168,8 +168,8 @@ pub fn run_pubkey_or_sign(
     // Return pub key as x,y
     let result = if action == "pubkey" {
         let ret_dict = json!({
-                    "x": &derived_child.x_coord().unwrap().to_str_radix(16),
-                    "y": &derived_child.y_coord().unwrap().to_str_radix(16),
+                    "x": hex::encode(derived_child.x_coord().unwrap().to_bytes().to_vec()),
+                    "y": hex::encode(derived_child.y_coord().unwrap().to_bytes().to_vec()),
                     "path": path,
                     "chain_code": hex::encode(derived_chain_code),
                     //"tweak": hex::encode(tweak.to_bytes().to_vec()),
