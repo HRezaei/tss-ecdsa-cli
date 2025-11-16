@@ -23,7 +23,7 @@ use crate::protocols::{generate_shared_chain_code, verify_dlog_proofs};
 use crate::eddsa::{CURVE_NAME, FE, GE};
 
 
-pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) -> Result<(), String> {
+pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>, room_id: String) -> Result<(), String> {
     let THRESHOLD: u16 = params[0].parse::<u16>().unwrap();
     let PARTIES: u16 = params[1].parse::<u16>().unwrap();
     let client = Client::new(addr.clone());
@@ -40,7 +40,7 @@ pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) ->
         threshold: THRESHOLD.to_string(),
         parties: PARTIES.to_string(),
     };
-    let (party_num_int, uuid) = match keygen_signup(&client, &tn_params, CURVE_NAME) {
+    let (party_num_int, uuid) = match keygen_signup(&client, tn_params, CURVE_NAME, room_id) {
         Ok((party_num_int, uuid)) => {
             println!("number: {:?}, uuid: {:?}, curve: {:?}", party_num_int, uuid, CURVE_NAME);
             (party_num_int, uuid)

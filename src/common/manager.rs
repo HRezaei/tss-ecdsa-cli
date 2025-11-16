@@ -22,10 +22,10 @@ use crate::common::{
     Index,
     Key,
     ManagerError,
-    Params,
     PartySignup,
     PartySignupRequestBody,
-    SigningPartySignup
+    SigningPartySignup,
+    KeygenSignupRequestBody
 };
 use crate::common::signing_room::SigningRoom;
 
@@ -251,12 +251,14 @@ fn set(db_mtx: &State<RwLock<TtlHashMap<Key, String>>>,
 #[post("/signupkeygen", format = "json", data = "<request>")]
 fn signup_keygen(
     db_mtx: &State<RwLock<TtlHashMap<Key, String>>>,
-    request: Json<(Params, String)>,
+    request: Json<KeygenSignupRequestBody>,
     jwt_guard: ApiKeyJwt
 ) -> Json<Result<PartySignup, ManagerError>> {
     println!("Got a signup request for keygen from: {:?}", jwt_guard.api_key);
 
-    let parties = match request.0.0.parties.parse::<u16>() {
+    let room_id = request.room_id.clone();
+
+    let parties = match request.params.parties.parse::<u16>() {
         Ok(parties) => parties,
         Err(error) => {
             return Json(Err(ManagerError{
@@ -264,7 +266,7 @@ fn signup_keygen(
             }))
         }
     };
-    let threshold = match request.0.0.threshold.parse::<u16>() {
+    let threshold = match request.params.threshold.parse::<u16>() {
         Ok(threshold) => {threshold}
         Err(error) => {
             return Json(Err(ManagerError{
@@ -276,13 +278,15 @@ fn signup_keygen(
         Ok(_valid) => {},
         Err(message) => return Json(Err(ManagerError {error: message.to_string()}))
     }
-    let curve = &match request.0.1.parse::<String>() {
+    let curve = &match request.curve_name.parse::<String>() {
         Ok(curve) => {curve}
         Err(error) => {
             return Json(Err(ManagerError{error: error.to_string()}))
         }
     };
-    let key = "signup-keygen-".to_string() + curve;
+    let mut key = "signup-keygen-".to_string() + curve;
+    key.push_str(room_id.as_str());
+
     match db_mtx.write() {
         Ok(mut hm) => {
             let client_signup = match hm.get(&key) {

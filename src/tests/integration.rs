@@ -124,6 +124,7 @@ pub(crate) fn prepare_manager_and_keys(threshold: i32, n_parties: i32, algorithm
         let error_file_path = manager_output_dir.join(key_name.clone() + i.to_string().as_str() + "_keygen_error.log");
         let error_file = File::create(&error_file_path).unwrap();
 
+        let room_id = random_str.clone();
         let handle = thread::spawn(move || {
             let status = Command::new(get_cli_executable_path())
                 .arg("keygen")
@@ -133,6 +134,8 @@ pub(crate) fn prepare_manager_and_keys(threshold: i32, n_parties: i32, algorithm
                 .arg(&manager_url)
                 .arg("-l")
                 .arg(curve_prefix)
+                .arg("-r")
+                .arg(room_id)
                 .env(TSS_CLI_POLL_TIMEOUT_VAR, "100")
                 .stdout(Stdio::from(output_file))
                 .stderr(Stdio::from(error_file))

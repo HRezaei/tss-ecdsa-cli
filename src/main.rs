@@ -64,6 +64,13 @@ where
                     .long("addr")
                     .takes_value(true)
                     .help("URL to manager. E.g. http://127.0.0.2:8002"))
+                .arg(Arg::with_name("room_id")
+                    .short("r")
+                    .long("room_id")
+                    .required(false)
+                    .takes_value(true)
+                    .help("Optional unique string to avoid interference between two or more \
+                    groups of parties doing keygen concurrently."))
                 .arg(Arg::with_name("algorithm")
                     .short("l")
                     .long("alg")
@@ -263,14 +270,15 @@ where
                 .to_string();
             let keysfile_path = sub_matches.value_of("keysfile").unwrap_or("").to_string();
             let curve = sub_matches.value_of("algorithm").unwrap_or("ecdsa");
+            let room_id = sub_matches.value_of("room_id").unwrap_or("").to_string();
             let params: Vec<&str> = sub_matches
                 .value_of("params")
                 .unwrap_or("")
                 .split("/")
                 .collect();
             match curve {
-                "ecdsa" => ecdsa::keygen::run_keygen(&addr, &keysfile_path, &params),
-                "eddsa" => eddsa::keygen::run_keygen(&addr, &keysfile_path, &params),
+                "ecdsa" => ecdsa::keygen::run_keygen(&addr, &keysfile_path, &params, room_id),
+                "eddsa" => eddsa::keygen::run_keygen(&addr, &keysfile_path, &params, room_id),
                 _ => Err("Invalid curve type specified.".to_string())
             }
                 .map(|_| format!("Keys data written to file: {:?}", keysfile_path))

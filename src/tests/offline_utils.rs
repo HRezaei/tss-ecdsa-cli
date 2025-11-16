@@ -35,7 +35,7 @@ pub(crate) fn prepare_manager_and_keys_offline(threshold: i32, n_parties: i32, a
         DKGSignScheme::ECDSA => "ecdsa",
         DKGSignScheme::EdDSA => "eddsa"
     };
-    let key_name = curve_prefix.to_string() + "-key-" + &random_str;
+    let key_name = curve_prefix.to_string() + "-key-" + &random_str.clone();
     let keyfile_prefix = "/tmp/".to_string() + key_name.clone().as_str() + "-";
     let keyfile_extension = ".json";
     let mut keyfiles = Vec::new();
@@ -50,7 +50,7 @@ pub(crate) fn prepare_manager_and_keys_offline(threshold: i32, n_parties: i32, a
         let params = params.clone();
         let keyfile = format!("{}{}{}", keyfile_prefix, i, keyfile_extension);
         keyfiles.push(keyfile.clone());
-
+        let room_id = random_str.clone();
         /*let output_file_path = manager_output_dir.join(key_name.clone() + i.to_string().as_str() + "_keygen_output.log");
         let output_file = File::create(&output_file_path).unwrap();
         let error_file_path = manager_output_dir.join(key_name.clone() + i.to_string().as_str() + "_keygen_error.log");
@@ -68,7 +68,9 @@ pub(crate) fn prepare_manager_and_keys_offline(threshold: i32, n_parties: i32, a
                     "-l",
                     curve_prefix,
                     "-a",
-                    OFFLINE_MANAGER_ADDRESS
+                    OFFLINE_MANAGER_ADDRESS,
+                    "-r",
+                    room_id.as_str(),
                 ];
                 run_main(args)
             }).unwrap();

@@ -76,6 +76,13 @@ pub struct PartySignupRequestBody {
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+pub struct KeygenSignupRequestBody {
+    pub params: Params,
+    pub room_id: String,
+    pub curve_name: String
+}
+
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct PartySignup {
     pub number: u16,
     pub uuid: String,
@@ -112,7 +119,7 @@ pub struct ManagerError {
     pub error: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Params {
     pub parties: String,
     pub threshold: String,
@@ -522,14 +529,20 @@ pub fn poll_for_p2p(
     Ok(ans_vec)
 }
 
-pub fn keygen_signup(client: &Client, params: &Params, curve_name: &str) -> Result<(u16, String), String> {
-    match client.post( "signupkeygen", (params, curve_name)) {
+pub fn keygen_signup(client: &Client, params: Params, curve_name: &str, room_id: String) -> Result<(u16, String), String> {
+    let request_body = KeygenSignupRequestBody {
+        params,
+        room_id,
+        curve_name: curve_name.to_string(),
+    };
+    let n_parties = request_body.params.parties.parse::<u16>().unwrap();
+    match client.post( "signupkeygen", request_body) {
         Some(res_body) => {
             match serde_json::from_str(&res_body) {
                 Ok(result) => {
                     match result {
                         Ok(PartySignup { number, uuid }) => {
-                            if number < 1 || number > params.parties.parse::<u16>().unwrap() {
+                            if number < 1 || number > n_parties {
                                 Err(format!("Manager returned an invalid party ID: {}", number))
                             } else {
                                 Ok((number, uuid))
