@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::Value;
 use crate::common::{sha256_digest, DKGSignScheme, TSS_CLI_POLL_TIMEOUT_VAR};
-use crate::tests::{ecdsa, get_cli_executable_path, get_next_manager_port, kill_manager, parse_sign_output, random_string, vector_all_the_same, TestResourcesCleanUp};
+use crate::tests::{ecdsa, find_prefixed_files, get_cli_executable_path, get_next_manager_port, kill_manager, parse_sign_output, random_string, vector_all_the_same, TestResourcesCleanUp};
 use crate::tests::eddsa;
 
 const MANAGER_ADDRESS: &str = "127.0.0.1";
@@ -144,7 +144,7 @@ pub(crate) fn prepare_manager_and_keys(threshold: i32, n_parties: i32, algorithm
         });
 
         handles.push(handle);
-        thread::sleep(Duration::from_millis(10)); // avoid race
+        thread::sleep(Duration::from_millis(5)); // avoid race
     }
     // Wait for all threads
     for handle in handles {
@@ -363,4 +363,23 @@ fn check_sign_t_of_n(
         DKGSignScheme::ECDSA => ecdsa::integration::verify_signature(r_hex, s_hex, message_hash, x_hex, y_hex),
         DKGSignScheme::EdDSA => eddsa::verify_signature(r_hex, s_hex, message_hash, x_hex, y_hex)
     }
+}
+
+
+pub(crate) fn check_sign_fixtures(algorithm: DKGSignScheme) {
+    let threshold: i32 = 2;
+    let n_parties: i32 = 5;
+    let scheme = match algorithm {
+        DKGSignScheme::ECDSA => "ecdsa",
+        DKGSignScheme::EdDSA => "eddsa"
+    };
+    let fixtures_path = "src/tests/fixtures/".to_owned() + scheme;
+    let keyfiles = find_prefixed_files(fixtures_path.as_str(), "e")
+        .unwrap();
+
+    let (manager, manager_url, _log_path) = prepare_manager(MANAGER_ADDRESS);
+
+    check_sign_t_of_n(threshold, n_parties, keyfiles, manager_url, algorithm);
+
+    kill_manager(manager);
 }

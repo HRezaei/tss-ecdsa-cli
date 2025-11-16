@@ -338,7 +338,7 @@ mod hd_derivation {
 pub mod integration {
     use crate::common::DKGSignScheme;
     use crate::protocols::eddsa::sum_of_fragment_files;
-    use crate::tests::integration::{check_keygen_t_of_n, check_sign_t_of_n_generate, prepare_manager_and_keys};
+    use crate::tests::integration::{check_keygen_t_of_n, check_sign_fixtures, prepare_manager_and_keys};
     use crate::tests::{kill_manager, TestResourcesCleanUp};
     #[test]
     fn test_keygen_2_of_5() {
@@ -352,12 +352,12 @@ pub mod integration {
 
     #[test]
     fn test_sign_1_of_3() {
-        check_sign_t_of_n_generate(1, 3, DKGSignScheme::EdDSA);
+        check_sign_fixtures(DKGSignScheme::EdDSA);
     }
 
     #[test]
     fn test_sign_2_of_5() {
-        check_sign_t_of_n_generate(2, 5, DKGSignScheme::EdDSA);
+        check_sign_fixtures(DKGSignScheme::EdDSA);
     }
 
     #[test]
@@ -390,7 +390,11 @@ pub mod unit_tests{
     use crate::common::DKGSignScheme;
     use crate::protocols::{HdImplementation, INVALID_FRAGMENT_FILE_ERROR};
     use crate::protocols::eddsa::EdDSAParameters;
-    use crate::tests::offline_utils::{check_keygen_t_of_n_offline, check_pubkey_function_without_path, check_sign_t_of_n_generate_offline};
+    use crate::tests::offline_utils::{
+        check_keygen_t_of_n_offline,
+        check_pubkey_function_without_path,
+        check_sign_fixtures_offline
+    };
 
     #[test]
     fn test_keygen_1_of_3() {
@@ -399,28 +403,28 @@ pub mod unit_tests{
 
     #[test]
     fn test_sign_1_of_3_hd_legacy() {
-        check_sign_t_of_n_generate_offline(1, 3,
-                                           DKGSignScheme::EdDSA,
-                                           "1/2/3".to_string(),
-                                           HdImplementation::Legacy
+        check_sign_fixtures_offline(
+           DKGSignScheme::EdDSA,
+           "1/2/3".to_string(),
+           HdImplementation::Legacy
         );
     }
 
     #[test]
     fn test_sign_1_of_3_hd_bip32() {
-        check_sign_t_of_n_generate_offline(1, 3,
-                                           DKGSignScheme::EdDSA,
-                                           "1/2/3".to_string(),
-                                           HdImplementation::Bip32
+        check_sign_fixtures_offline(
+           DKGSignScheme::EdDSA,
+           "1/2/3".to_string(),
+           HdImplementation::Bip32
         );
     }
 
     #[test]
     fn test_sign_1_of_3_without_hd() {
-        check_sign_t_of_n_generate_offline(1, 3,
-                                           DKGSignScheme::EdDSA,
-                                           "".to_string(),
-                                           HdImplementation::Bip32
+        check_sign_fixtures_offline(
+           DKGSignScheme::EdDSA,
+           "".to_string(),
+           HdImplementation::Bip32
         );
     }
 

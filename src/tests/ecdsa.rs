@@ -467,8 +467,14 @@ pub(crate) mod integration {
     use curv::BigInt;
     use crate::common::DKGSignScheme;
     use crate::protocols::ecdsa::{sum_of_fragment_files, FE, GE};
-    use crate::tests::integration::{check_keygen_t_of_n, check_sign_t_of_n_generate, prepare_manager_and_keys};
+    use crate::tests::integration::{
+        check_keygen_t_of_n,
+        check_sign_t_of_n_generate,
+        prepare_manager_and_keys,
+        check_sign_fixtures,
+    };
     use crate::tests::{kill_manager, TestResourcesCleanUp};
+
     pub fn check_sig(
         r: &FE,
         s: &FE,
@@ -543,7 +549,7 @@ pub(crate) mod integration {
 
     #[test]
     fn test_sign_2_of_5() {
-        check_sign_t_of_n_generate(2, 5, DKGSignScheme::ECDSA);
+        check_sign_fixtures(DKGSignScheme::ECDSA);
     }
 
     #[test]
@@ -575,13 +581,7 @@ mod unit_tests {
     use curv::arithmetic::Converter;
     use crate::common::DKGSignScheme;
     use crate::protocols::ecdsa::ECDSAParameters;
-    use crate::tests::offline_utils::{
-        check_keygen_t_of_n_offline,
-        check_pubkey_function_without_path,
-        check_sign_t_of_n_generate_offline,
-        prepare_manager_and_keys_offline,
-        run_curv7_convert_function
-    };
+    use crate::tests::offline_utils::{check_keygen_t_of_n_offline, check_pubkey_function_without_path, check_sign_fixtures_offline, check_sign_t_of_n_generate_offline, prepare_manager_and_keys_offline, run_curv7_convert_function};
     use crate::protocols::{HdImplementation, INVALID_FRAGMENT_FILE_ERROR};
     use crate::run_main;
     use crate::tests::{TestResourcesCleanUp, CLI_NAME};
@@ -601,20 +601,20 @@ mod unit_tests {
     }
 
     #[test]
-    fn test_sign_1_of_3_hd_bip32() {
-        check_sign_t_of_n_generate_offline(1, 3,
-                                           DKGSignScheme::ECDSA,
-                                           "1/2/3".to_string(),
-                                           HdImplementation::Bip32
+    fn test_sign_hd_bip32() {
+        check_sign_fixtures_offline(
+           DKGSignScheme::ECDSA,
+           "1/2/3".to_string(),
+           HdImplementation::Bip32
         );
     }
 
     #[test]
-    fn test_sign_1_of_3_without_hd() {
-        check_sign_t_of_n_generate_offline(1, 3,
-                                           DKGSignScheme::ECDSA,
-                                           "".to_string(),
-                                           HdImplementation::Bip32
+    fn test_sign_without_hd() {
+        check_sign_fixtures_offline(
+           DKGSignScheme::ECDSA,
+           "".to_string(),
+           HdImplementation::Bip32
         );
     }
 

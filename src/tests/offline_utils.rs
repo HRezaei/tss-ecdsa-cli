@@ -74,7 +74,7 @@ pub(crate) fn prepare_manager_and_keys_offline(threshold: i32, n_parties: i32, a
             }).unwrap();
 
         handles.push(handle);
-        thread::sleep(Duration::from_secs(10)); // avoid race
+        thread::sleep(Duration::from_secs(5)); // avoid race
     }
 
     // Wait for all threads
@@ -231,7 +231,7 @@ pub fn run_main_in_parallel(
             }).unwrap();
 
         handles.push(handle);
-        thread::sleep(Duration::from_secs(10)); // avoid race
+        thread::sleep(Duration::from_secs(5)); // avoid race
     }
     let mut outputs = Vec::new();
     for handle in handles {
@@ -294,6 +294,37 @@ pub fn check_sign_t_of_n_generate_offline(
         None => assert!(false, "Failed to prepare manager and key files."),
     }
 }
+
+pub fn check_sign_fixtures_offline(
+    scheme: DKGSignScheme,
+    hd_path: String,
+    hd_implementation: HdImplementation
+) {
+    let threshold: i32 = 2;
+    let n_parties: i32 = 5;
+    let algorithm = match scheme {
+        DKGSignScheme::ECDSA => "ecdsa",
+        DKGSignScheme::EdDSA => "eddsa"
+    };
+
+    block_on(init_client());
+
+    let fixtures_path = "src/tests/fixtures/".to_owned() + algorithm;
+    match find_prefixed_files(fixtures_path.as_str(), "e") {
+        Ok( keyfiles) => {
+            check_sign_t_of_n_offline(
+                threshold,
+                n_parties,
+                keyfiles.clone(),
+                scheme,
+                hd_path.clone(),
+                hd_implementation,
+            );
+        }
+        Err(e) => assert!(false, "Failed to find key file fixtures. Error: {}", e),
+    }
+}
+
 
 pub fn check_pubkey_function_without_path(
     scheme: DKGSignScheme,
