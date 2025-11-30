@@ -60,18 +60,19 @@ Here is a list of environment variables used to configure the tool:
     ROCKET_ADDRESS=127.0.0.1 ROCKET_PORT=8008 ./target/release/tss_cli manager
     ```
 
-2. Run keygen:
+   2. Run keygen:
 
-    ```sh
-    USAGE:
-        tss_cli keygen [OPTIONS] <keysfile> <params>
+       ```sh
+       USAGE:
+           tss_cli keygen [OPTIONS] <keysfile> <params>
 
-    OPTIONS:
-        -a, --addr <manager_addr>    URL to manager. E.g. http://127.0.0.2:8002
-        -l, --alg <algorithm>        Either ecdsa (default) or eddsa
- 
+       OPTIONS:
+           -a, --addr <manager_addr>    URL to manager. E.g. http://127.0.0.2:8002
+           -l, --alg <algorithm>        Either ecdsa (default) or eddsa
+           -r, --room_id <room_id>      Optional unique string to avoid interference between two or more groups of 
+                                        parties doing keygen concurrently.
 
-    ARGS:
+      ARGS:
         <keysfile>    Target keys file
         <params>      Threshold params: threshold/parties (t+1/n). E.g. 1/3 for 2 of 3 schema. The parameter n must not
                       be greater than the value set for env var TSS_MANAGER_MAX_PARTIES (default: 10). Also, t must be
@@ -176,3 +177,25 @@ ARGS:
 # Key file check successful!
 
 ```
+
+## Running Automated Tests
+There are two types of tests:
+* Integration tests that run manager and parties each in a separate process and check their
+outputs. To run them, use the command below:
+```shell
+cargo test integration
+```
+*  Tests that run manager and parties all within the same process but using separate threads,
+To run them, here's the command:
+```shell
+cargo test unit
+```
+
+### Checking Test Coverage
+Using the command below, you can run the tests and check what proportion of codes are covered by tests:
+```shell
+cargo +nightly llvm-cov test --open --ignore-run-fail --bin tss_cli  --branch
+```
+The above runs all tests concurrently which is faster but may cause some of the tests to interfere in manager and fail.
+But if you add the option `-- --test-threads=1` to the above command, it will run tests one by one, thus all should pass.
+In general, even concurrent tests must pass, the work is in progress in this regard.
