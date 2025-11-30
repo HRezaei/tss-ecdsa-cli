@@ -3,8 +3,6 @@ use std::{thread};
 use std::time::Duration;
 use serde_json::Value;
 use crate::run_main;
-use rand::distr::Alphanumeric;
-use rand::Rng;
 use rocket::futures::executor::block_on;
 use crate::common::{sha256_digest, DKGSignScheme, OfflineClient, OFFLINE_MANAGER_ADDRESS};
 use crate::common::manager::build_manager;
@@ -25,11 +23,7 @@ pub async fn init_client() -> &'static OfflineClient {
 pub(crate) fn prepare_manager_and_keys_offline(threshold: i32, n_parties: i32, algorithm: DKGSignScheme)
                                        -> Option<Vec<String>> {
     // Generate a random 8-character alphanumeric string
-    let random_str: String = rand::rng()
-        .sample_iter(&Alphanumeric)
-        .take(4)
-        .map(char::from)
-        .collect();
+    let random_str: String = random_string(4);
 
     let curve_prefix = match algorithm {
         DKGSignScheme::ECDSA => "ecdsa",
