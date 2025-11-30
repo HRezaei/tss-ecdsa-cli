@@ -154,9 +154,7 @@ pub fn check_sign_t_of_n_offline(
     };
     let setup_str = format!("{}/{}", threshold, n_parties);
     let mut commands: Vec<Vec<String>> = Vec::new();
-    let mut output_paths: Vec<String> = Vec::new();
     for keyfile in keyfiles {
-        let output_path = format!("{}.sign_output", keyfile);
         let mut arguments: Vec<String> = vec![
             CLI_NAME.to_string(),
             "sign".to_string(),
@@ -169,15 +167,12 @@ pub fn check_sign_t_of_n_offline(
             OFFLINE_MANAGER_ADDRESS.to_string(),
             "-l".to_string(),
             curve_prefix.to_string(),
-            "-o".to_string(),
-            output_path.clone()
         ];
         if !hd_path.is_empty() {
             arguments.push("-p".to_string());
             arguments.push(hd_path.clone());
         }
         commands.push(arguments);
-        output_paths.push(output_path);
         if commands.len() == (threshold+1) as usize {
             break;
         }
@@ -187,10 +182,6 @@ pub fn check_sign_t_of_n_offline(
 
     let outputs = run_main_in_parallel(commands);
 
-    let _cleanup = TestResourcesCleanUp {
-        keyfiles: output_paths,
-        manager: None,
-    };
     let mut one_output: HashMap<String, String> = HashMap::new();
     for output in outputs.iter().clone() {
         //assert_eq!(*exit_code, 0, "Party {} failed with exit code {}", output, exit_code);
