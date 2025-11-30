@@ -123,6 +123,8 @@ pub fn convert_store_file(keys_file_path: String, destination_path: String)
     ))
         .unwrap();
 
+    fs::create_dir_all(std::path::Path::new(&destination_path).parent().unwrap())
+        .map_err(|err| err.to_string())?;
     fs::write(&destination_path, keygen_json)
         .map_err(|e| format!("Unable to save in {}! Error: {:?}", destination_path, e))?;
 
