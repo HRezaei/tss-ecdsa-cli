@@ -136,7 +136,7 @@ pub(crate) fn prepare_manager_and_keys(threshold: i32, n_parties: i32, algorithm
                 .arg(curve_prefix)
                 .arg("-r")
                 .arg(room_id)
-                .env(TSS_CLI_POLL_TIMEOUT_VAR, "100")
+                .env(TSS_CLI_POLL_TIMEOUT_VAR, "200")
                 .stdout(Stdio::from(output_file))
                 .stderr(Stdio::from(error_file))
                 .status()
@@ -263,7 +263,7 @@ pub fn run_commands_in_parallel(
         let tx = tx.clone();
         let handle = thread::spawn(move || {
             let output = Command::new(&get_cli_executable_path())
-                .env(TSS_CLI_POLL_TIMEOUT_VAR, "100")
+                .env(TSS_CLI_POLL_TIMEOUT_VAR, "200")
                 .args(args.clone())
                 .output();
 

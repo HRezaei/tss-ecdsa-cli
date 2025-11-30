@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::{thread};
+use std::thread;
 use std::time::Duration;
 use serde_json::Value;
 use crate::run_main;
@@ -228,7 +228,6 @@ pub fn run_main_in_parallel(
 }
 
 pub fn check_keygen_t_of_n_offline(threshold: i32, n_parties: i32, algorithm: DKGSignScheme) {
-
     if let Some(keyfiles) =
         prepare_manager_and_keys_offline(threshold, n_parties, algorithm.clone()) {
 
